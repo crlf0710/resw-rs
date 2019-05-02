@@ -1,0 +1,12 @@
+[package]
+name = "resw"
+version = "0.1.0"
+authors = ["CrLF0710"]
+edition = "2018"
+license = "Apache2/MIT"
+
+[dependencies]
+winapi = {version = "0.3", features = ["minwindef", "winnt", "winuser", "wingdi"]}
+
+[features]
+unstable = []
