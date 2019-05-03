@@ -1,6 +1,9 @@
 #![cfg_attr(feature = "unstable", feature(specialization))]
+#![allow(dead_code)]
 use std::borrow::Cow;
 use std::collections::BTreeMap;
+use std::io;
+use std::fmt;
 use std::path::Path;
 use winapi::shared::minwindef::DWORD;
 use winapi::shared::minwindef::WORD;
@@ -48,6 +51,82 @@ pub mod lang {
         LANG_KOR, LANG_PLK, LANG_PTB, LANG_RUS, LANG_TRK,
     ];
 }
+
+#[derive(Clone, PartialEq, PartialOrd, Eq, Ord, Debug)]
+pub struct Id(WORD);
+
+impl From<WORD> for Id {
+    fn from(v: WORD) -> Self {
+        Id(v)
+    }
+}
+
+impl From<isize> for Id {
+    fn from(v: isize) -> Self {
+        let v: WORD = match v {
+            -1..=0xFFFF => v as u16,
+            _ => panic!("id out of bound, expected u16, actual value = {}", v),
+        };
+        Id(v)
+    }
+}
+
+impl fmt::Display for Id {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.0).map_err(|_| fmt::Error)?;
+        Ok(())
+    }
+}
+
+#[derive(Clone, PartialEq, PartialOrd, Eq, Ord, Debug)]
+pub enum IdOrName {
+    Id(Id),
+    Name(CowStr),
+}
+
+impl From<WORD> for IdOrName {
+    fn from(v: WORD) -> Self {
+        IdOrName::Id(Id(v))
+    }
+}
+
+impl From<isize> for IdOrName {
+    fn from(v: isize) -> Self {
+        IdOrName::Id(Id::from(v))
+    }
+}
+
+impl From<String> for IdOrName {
+    fn from(v: String) -> Self {
+        IdOrName::Name(Cow::Owned(v))
+    }
+}
+
+#[cfg(not(feature = "unstable"))]
+impl<'a> From<&'a str> for IdOrName {
+    fn from(v: &'a str) -> Self {
+        IdOrName::Name(Cow::Owned(v.to_owned()))
+    }
+}
+
+#[cfg(feature = "unstable")]
+default impl<'a> From<&'a str> for IdOrName {
+    fn from(v: &'a str) -> Self {
+        IdOrName::Name(Cow::Owned(v.to_owned()))
+    }
+}
+
+#[cfg(feature = "unstable")]
+default impl<'a> From<&'a str> for IdOrName
+where
+    'a: 'static,
+{
+    fn from(v: &'a str) -> Self {
+        IdOrName::Name(Cow::Borrowed(v))
+    }
+}
+
+pub const NOT_USEFUL_ID: Id = Id(-1 as _);
 
 pub struct Build {
     resources: BTreeMap<Lang, Vec<(IdOrName, Box<dyn Resource>)>>,
@@ -110,58 +189,16 @@ impl Build {
     }
 }
 
-#[derive(Clone, PartialEq, PartialOrd, Eq, Ord)]
-pub struct Id(WORD);
-
-impl From<WORD> for Id {
-    fn from(v: WORD) -> Self {
-        Id(v)
+pub trait Resource: 'static {
+    fn write_script_segment(
+        &self,
+        _w: &mut dyn io::Write,
+        _l: Lang,
+        _id_or_name: IdOrName,
+    ) -> io::Result<()> {
+        unimplemented!()
     }
 }
-
-#[derive(Clone, PartialEq, PartialOrd, Eq, Ord)]
-pub enum IdOrName {
-    Id(Id),
-    Name(CowStr),
-}
-
-impl From<WORD> for IdOrName {
-    fn from(v: WORD) -> Self {
-        IdOrName::Id(Id(v))
-    }
-}
-
-impl From<String> for IdOrName {
-    fn from(v: String) -> Self {
-        IdOrName::Name(Cow::Owned(v))
-    }
-}
-
-#[cfg(not(feature = "unstable"))]
-impl From<&'static str> for IdOrName {
-    fn from(v: &'static str) -> Self {
-        IdOrName::Name(Cow::Borrowed(v))
-    }
-}
-
-#[cfg(feature = "unstable")]
-default impl<'a> From<&'a str> for IdOrName {
-    fn from(v: &'a str) -> Self {
-        IdOrName::Name(Cow::Owned(v.to_owned()))
-    }
-}
-
-#[cfg(feature = "unstable")]
-default impl<'a> From<&'a str> for IdOrName
-where
-    'a: 'static,
-{
-    fn from(v: &'a str) -> Self {
-        IdOrName::Name(Cow::Borrowed(v))
-    }
-}
-
-pub trait Resource: 'static {}
 
 #[macro_use]
 pub mod resource {
@@ -178,7 +215,7 @@ pub mod resource {
     }
 
     macro_rules! define_path_only_resource {
-        ($type_name:ident) => {
+        ($type_name:ident, $res_type_keyword:literal) => {
             #[derive(Clone)]
             pub struct $type_name(Rc<CowPath>);
 
@@ -188,22 +225,56 @@ pub mod resource {
                 }
             }
 
-            impl Resource for $type_name {}
+            impl Resource for $type_name {
+                fn write_script_segment(
+                    &self,
+                    w: &mut dyn std::io::Write,
+                    l: crate::Lang,
+                    id_or_name: crate::IdOrName,
+                ) -> Result<(), std::io::Error> {
+                    crate::codegen::write_path_only_resource(
+                        w,
+                        l,
+                        id_or_name,
+                        $res_type_keyword,
+                        self.0.as_ref(),
+                    )?;
+                    Ok(())
+                }
+            }
         };
     }
 
     macro_rules! define_builder_generated_resource {
-        ($type_name:ident, $data_type:path, $builder_type:path) => {
+        ($type_name:ident, $data_type:path, $builder_type:path, $res_type_keyword:literal) => {
             #[derive(Clone)]
             pub struct $type_name(pub(crate) Rc<$data_type>);
 
             impl $type_name {
+                pub(crate) const TYPE_KEYWORD: &'static str = $res_type_keyword;
+
                 pub fn from_builder() -> $builder_type {
                     <$builder_type as crate::PrivDefault>::priv_default()
                 }
             }
 
-            impl Resource for $type_name {}
+            impl Resource for $type_name {
+                fn write_script_segment(
+                    &self,
+                    w: &mut dyn std::io::Write,
+                    l: crate::Lang,
+                    id_or_name: crate::IdOrName,
+                ) -> Result<(), std::io::Error> {
+                    if self.0.as_ref().is_missing_for_lang(l) {
+                        return Ok(())
+                    }
+                    crate::codegen::write_resource_header(w, l, id_or_name, $res_type_keyword)?;
+                    self.0.as_ref().write_resource_header_extras(w, l)?;
+                    write!(w, "\n")?;
+                    self.0.as_ref().write_resource_segment(w, l)?;
+                    Ok(())
+                }
+            }
         };
     }
 
@@ -330,43 +401,71 @@ pub mod resource {
         };
     }
 
-    define_path_only_resource!(Bitmap);
-    define_path_only_resource!(Cursor);
-    define_path_only_resource!(Font);
-    define_path_only_resource!(HTML);
-    define_path_only_resource!(Icon);
-    define_path_only_resource!(MessageTable);
+    macro_rules! unimplemented_resouce_data_write_segment {
+        ($type_name:ident) => {
+            impl $type_name {
+                pub(crate) fn is_missing_for_lang(&self, l: crate::Lang) -> bool {
+                    true
+                }
+
+                pub(crate) fn write_resource_header_extras(&self, w: &mut dyn std::io::Write, l: crate::Lang) -> Result<(), std::io::Error> {
+                    unimplemented!()
+                }
+
+                pub(crate) fn write_resource_segment(&self, w: &mut dyn std::io::Write, l: crate::Lang) -> Result<(), std::io::Error> {
+                    unimplemented!()
+                }
+            }
+        };
+    }
+
+    define_path_only_resource!(Bitmap, "BITMAP");
+    define_path_only_resource!(Cursor, "CURSOR");
+    define_path_only_resource!(Font, "FONT");
+    define_path_only_resource!(HTML, "HTML");
+    define_path_only_resource!(Icon, "ICON");
+    define_path_only_resource!(MessageTable, "MESSAGETABLE");
 
     define_builder_generated_resource!(
         StringTable,
         crate::string_table::StringTableData,
-        crate::string_table::StringTableBuilder
+        crate::string_table::StringTableBuilder,
+        "STRINGTABLE"
     );
 
     define_builder_generated_resource!(
         Accelerators,
         crate::accelerators::AcceleratorsData,
-        crate::accelerators::AcceleratorsBuilder
+        crate::accelerators::AcceleratorsBuilder,
+        "ACCELERATORS"
     );
 
-    define_builder_generated_resource!(Menu, crate::menu::MenuData, crate::menu::MenuBuilder);
+    define_builder_generated_resource!(
+        Menu,
+        crate::menu::MenuData,
+        crate::menu::MenuBuilder,
+        "MENUEX"
+    );
 
     define_builder_generated_resource!(
         Dialog,
         crate::dialog::DialogData,
-        crate::dialog::DialogBuilder
+        crate::dialog::DialogBuilder,
+        "DIALOGEX"
     );
 
     define_builder_generated_resource!(
         VersionInfo,
         crate::version_info::VersionInfoData,
-        crate::version_info::VersionInfoBuilder
+        crate::version_info::VersionInfoBuilder,
+        "VERSIONINFO"
     );
 
     define_builder_generated_resource!(
         RcInline,
         crate::rc_inline::RcInlineData,
-        crate::rc_inline::RcInlineBuilder
+        crate::rc_inline::RcInlineBuilder,
+        "RCDATA"
     );
 
     define_builder_or_path_generated_resource!(
@@ -404,6 +503,16 @@ impl<T> OptionLangSpecific<T> {
     fn insert_fallback(&mut self, v: T) {
         self.0.insert(None, v);
     }
+
+    fn get(&self, lang: Lang) -> Option<&T> {
+        if let Some(v) = self.0.get(&Some(lang)) {
+            Some(v)
+        } else if let Some(v) = self.0.get(&None) {
+            Some(v)
+        } else {
+            None
+        }
+    }
 }
 
 impl<T> Default for OptionLangSpecific<T> {
@@ -415,6 +524,27 @@ impl<T> Default for OptionLangSpecific<T> {
 pub struct ExtraInfo {
     pub characteristics: Option<DWORD>,
     pub version: Option<DWORD>,
+}
+
+pub struct MultiLangText(OptionLangSpecific<CowStr>);
+
+impl MultiLangText {
+    fn empty() -> Self {
+        MultiLangText(OptionLangSpecific::default())
+    }
+
+    pub fn lang(mut self, lang: Lang, str: impl Into<CowStr>) -> Self {
+        self.0.insert_lang_specific(lang, str.into());
+        self
+    }
+}
+
+impl<T> From<T> for MultiLangText where T: Into<CowStr> {
+    fn from(v: T) -> Self {
+        let mut r = Self::empty();
+        r.0.insert_fallback(v.into());
+        r
+    }
 }
 
 trait PrivDefault {
@@ -462,11 +592,13 @@ pub mod string_table {
             self
         }
     }
+
+    unimplemented_resouce_data_write_segment!(StringTableData);
 }
 
 pub mod accelerators {
     use crate::{ExtraInfo, Id, Lang, OptionLangSpecific};
-    use std::rc::Rc;
+    use std::fmt;
     use winapi::ctypes::c_int;
     use winapi::shared::minwindef::DWORD;
     use winapi::um::winuser;
@@ -475,196 +607,238 @@ pub mod accelerators {
     pub struct ASCIIKey(u8);
 
     impl ASCIIKey {
-        pub fn new_checked(v: u8) -> Option<ASCIIKey> {
+        pub fn ascii_key(v: u8) -> ASCIIKey {
             match v {
                 32u8..=126u8 => Some(ASCIIKey(v)),
                 _ => None,
             }
+            .expect("provided u8 value is not ascii key")
+        }
+    }
+
+    impl fmt::Display for ASCIIKey {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            write!(f, "{}", self.0).map_err(|_| fmt::Error)?;
+            Ok(())
         }
     }
 
     #[derive(Clone, Copy)]
-    enum VirtKeyData {
-        AlphaNumeric(u8),
-        Vk(c_int),
-    }
-
-    #[derive(Clone, Copy)]
-    pub struct VirtKey(VirtKeyData);
+    pub struct VirtKey(c_int);
 
     impl VirtKey {
-        pub fn alphanumeric(v: u8) -> Option<VirtKey> {
-            match v {
-                97u8..=122u8 => None,
-                32u8..=126u8 => Some(VirtKey(VirtKeyData::AlphaNumeric(v))),
-                _ => None,
-            }
-        }
-        pub const LBUTTON: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_LBUTTON));
-        pub const RBUTTON: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_RBUTTON));
-        pub const CANCEL: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_CANCEL));
-        pub const MBUTTON: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_MBUTTON));
-        pub const XBUTTON1: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_XBUTTON1));
-        pub const XBUTTON2: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_XBUTTON2));
-        pub const BACK: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_BACK));
-        pub const TAB: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_TAB));
-        pub const CLEAR: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_CLEAR));
-        pub const RETURN: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_RETURN));
-        pub const SHIFT: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_SHIFT));
-        pub const CONTROL: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_CONTROL));
-        pub const MENU: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_MENU));
-        pub const PAUSE: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_PAUSE));
-        pub const CAPITAL: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_CAPITAL));
-        pub const KANA: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_KANA));
-        pub const HANGEUL: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_HANGEUL));
-        pub const HANGUL: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_HANGUL));
-        pub const JUNJA: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_JUNJA));
-        pub const FINAL: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_FINAL));
-        pub const HANJA: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_HANJA));
-        pub const KANJI: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_KANJI));
-        pub const ESCAPE: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_ESCAPE));
-        pub const CONVERT: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_CONVERT));
-        pub const NONCONVERT: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_NONCONVERT));
-        pub const ACCEPT: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_ACCEPT));
-        pub const MODECHANGE: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_MODECHANGE));
-        pub const SPACE: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_SPACE));
-        pub const PRIOR: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_PRIOR));
-        pub const NEXT: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_NEXT));
-        pub const END: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_END));
-        pub const HOME: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_HOME));
-        pub const LEFT: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_LEFT));
-        pub const UP: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_UP));
-        pub const RIGHT: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_RIGHT));
-        pub const DOWN: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_DOWN));
-        pub const SELECT: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_SELECT));
-        pub const PRINT: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_PRINT));
-        pub const EXECUTE: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_EXECUTE));
-        pub const SNAPSHOT: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_SNAPSHOT));
-        pub const INSERT: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_INSERT));
-        pub const DELETE: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_DELETE));
-        pub const HELP: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_HELP));
-        pub const LWIN: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_LWIN));
-        pub const RWIN: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_RWIN));
-        pub const APPS: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_APPS));
-        pub const SLEEP: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_SLEEP));
-        pub const NUMPAD0: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_NUMPAD0));
-        pub const NUMPAD1: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_NUMPAD1));
-        pub const NUMPAD2: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_NUMPAD2));
-        pub const NUMPAD3: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_NUMPAD3));
-        pub const NUMPAD4: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_NUMPAD4));
-        pub const NUMPAD5: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_NUMPAD5));
-        pub const NUMPAD6: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_NUMPAD6));
-        pub const NUMPAD7: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_NUMPAD7));
-        pub const NUMPAD8: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_NUMPAD8));
-        pub const NUMPAD9: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_NUMPAD9));
-        pub const MULTIPLY: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_MULTIPLY));
-        pub const ADD: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_ADD));
-        pub const SEPARATOR: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_SEPARATOR));
-        pub const SUBTRACT: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_SUBTRACT));
-        pub const DECIMAL: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_DECIMAL));
-        pub const DIVIDE: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_DIVIDE));
-        pub const F1: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_F1));
-        pub const F2: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_F2));
-        pub const F3: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_F3));
-        pub const F4: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_F4));
-        pub const F5: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_F5));
-        pub const F6: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_F6));
-        pub const F7: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_F7));
-        pub const F8: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_F8));
-        pub const F9: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_F9));
-        pub const F10: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_F10));
-        pub const F11: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_F11));
-        pub const F12: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_F12));
-        pub const F13: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_F13));
-        pub const F14: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_F14));
-        pub const F15: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_F15));
-        pub const F16: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_F16));
-        pub const F17: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_F17));
-        pub const F18: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_F18));
-        pub const F19: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_F19));
-        pub const F20: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_F20));
-        pub const F21: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_F21));
-        pub const F22: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_F22));
-        pub const F23: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_F23));
-        pub const F24: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_F24));
-        pub const NUMLOCK: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_NUMLOCK));
-        pub const SCROLL: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_SCROLL));
-        pub const OEM_NEC_EQUAL: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_OEM_NEC_EQUAL));
-        pub const OEM_FJ_JISHO: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_OEM_FJ_JISHO));
-        pub const OEM_FJ_MASSHOU: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_OEM_FJ_MASSHOU));
-        pub const OEM_FJ_TOUROKU: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_OEM_FJ_TOUROKU));
-        pub const OEM_FJ_LOYA: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_OEM_FJ_LOYA));
-        pub const OEM_FJ_ROYA: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_OEM_FJ_ROYA));
-        pub const LSHIFT: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_LSHIFT));
-        pub const RSHIFT: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_RSHIFT));
-        pub const LCONTROL: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_LCONTROL));
-        pub const RCONTROL: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_RCONTROL));
-        pub const LMENU: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_LMENU));
-        pub const RMENU: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_RMENU));
-        pub const BROWSER_BACK: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_BROWSER_BACK));
-        pub const BROWSER_FORWARD: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_BROWSER_FORWARD));
-        pub const BROWSER_REFRESH: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_BROWSER_REFRESH));
-        pub const BROWSER_STOP: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_BROWSER_STOP));
-        pub const BROWSER_SEARCH: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_BROWSER_SEARCH));
+        pub const NUM_0: VirtKey = VirtKey(0x30);
+        pub const NUM_1: VirtKey = VirtKey(0x31);
+        pub const NUM_2: VirtKey = VirtKey(0x32);
+        pub const NUM_3: VirtKey = VirtKey(0x33);
+        pub const NUM_4: VirtKey = VirtKey(0x34);
+        pub const NUM_5: VirtKey = VirtKey(0x35);
+        pub const NUM_6: VirtKey = VirtKey(0x36);
+        pub const NUM_7: VirtKey = VirtKey(0x37);
+        pub const NUM_8: VirtKey = VirtKey(0x38);
+        pub const NUM_9: VirtKey = VirtKey(0x39);
+        pub const LETTER_A: VirtKey = VirtKey(0x41);
+        pub const LETTER_B: VirtKey = VirtKey(0x42);
+        pub const LETTER_C: VirtKey = VirtKey(0x43);
+        pub const LETTER_D: VirtKey = VirtKey(0x44);
+        pub const LETTER_E: VirtKey = VirtKey(0x45);
+        pub const LETTER_F: VirtKey = VirtKey(0x46);
+        pub const LETTER_G: VirtKey = VirtKey(0x47);
+        pub const LETTER_H: VirtKey = VirtKey(0x48);
+        pub const LETTER_I: VirtKey = VirtKey(0x49);
+        pub const LETTER_J: VirtKey = VirtKey(0x4A);
+        pub const LETTER_K: VirtKey = VirtKey(0x4B);
+        pub const LETTER_L: VirtKey = VirtKey(0x4C);
+        pub const LETTER_M: VirtKey = VirtKey(0x4D);
+        pub const LETTER_N: VirtKey = VirtKey(0x4E);
+        pub const LETTER_O: VirtKey = VirtKey(0x4F);
+        pub const LETTER_P: VirtKey = VirtKey(0x50);
+        pub const LETTER_Q: VirtKey = VirtKey(0x51);
+        pub const LETTER_R: VirtKey = VirtKey(0x52);
+        pub const LETTER_S: VirtKey = VirtKey(0x53);
+        pub const LETTER_T: VirtKey = VirtKey(0x54);
+        pub const LETTER_U: VirtKey = VirtKey(0x55);
+        pub const LETTER_V: VirtKey = VirtKey(0x56);
+        pub const LETTER_W: VirtKey = VirtKey(0x57);
+        pub const LETTER_X: VirtKey = VirtKey(0x58);
+        pub const LETTER_Y: VirtKey = VirtKey(0x59);
+        pub const LETTER_Z: VirtKey = VirtKey(0x5A);
+        pub const LBUTTON: VirtKey = VirtKey(winuser::VK_LBUTTON);
+        pub const RBUTTON: VirtKey = VirtKey(winuser::VK_RBUTTON);
+        pub const CANCEL: VirtKey = VirtKey(winuser::VK_CANCEL);
+        pub const MBUTTON: VirtKey = VirtKey(winuser::VK_MBUTTON);
+        pub const XBUTTON1: VirtKey = VirtKey(winuser::VK_XBUTTON1);
+        pub const XBUTTON2: VirtKey = VirtKey(winuser::VK_XBUTTON2);
+        pub const BACK: VirtKey = VirtKey(winuser::VK_BACK);
+        pub const TAB: VirtKey = VirtKey(winuser::VK_TAB);
+        pub const CLEAR: VirtKey = VirtKey(winuser::VK_CLEAR);
+        pub const RETURN: VirtKey = VirtKey(winuser::VK_RETURN);
+        pub const SHIFT: VirtKey = VirtKey(winuser::VK_SHIFT);
+        pub const CONTROL: VirtKey = VirtKey(winuser::VK_CONTROL);
+        pub const MENU: VirtKey = VirtKey(winuser::VK_MENU);
+        pub const PAUSE: VirtKey = VirtKey(winuser::VK_PAUSE);
+        pub const CAPITAL: VirtKey = VirtKey(winuser::VK_CAPITAL);
+        pub const KANA: VirtKey = VirtKey(winuser::VK_KANA);
+        pub const HANGEUL: VirtKey = VirtKey(winuser::VK_HANGEUL);
+        pub const HANGUL: VirtKey = VirtKey(winuser::VK_HANGUL);
+        pub const JUNJA: VirtKey = VirtKey(winuser::VK_JUNJA);
+        pub const FINAL: VirtKey = VirtKey(winuser::VK_FINAL);
+        pub const HANJA: VirtKey = VirtKey(winuser::VK_HANJA);
+        pub const KANJI: VirtKey = VirtKey(winuser::VK_KANJI);
+        pub const ESCAPE: VirtKey = VirtKey(winuser::VK_ESCAPE);
+        pub const CONVERT: VirtKey = VirtKey(winuser::VK_CONVERT);
+        pub const NONCONVERT: VirtKey = VirtKey(winuser::VK_NONCONVERT);
+        pub const ACCEPT: VirtKey = VirtKey(winuser::VK_ACCEPT);
+        pub const MODECHANGE: VirtKey = VirtKey(winuser::VK_MODECHANGE);
+        pub const SPACE: VirtKey = VirtKey(winuser::VK_SPACE);
+        pub const PRIOR: VirtKey = VirtKey(winuser::VK_PRIOR);
+        pub const NEXT: VirtKey = VirtKey(winuser::VK_NEXT);
+        pub const END: VirtKey = VirtKey(winuser::VK_END);
+        pub const HOME: VirtKey = VirtKey(winuser::VK_HOME);
+        pub const LEFT: VirtKey = VirtKey(winuser::VK_LEFT);
+        pub const UP: VirtKey = VirtKey(winuser::VK_UP);
+        pub const RIGHT: VirtKey = VirtKey(winuser::VK_RIGHT);
+        pub const DOWN: VirtKey = VirtKey(winuser::VK_DOWN);
+        pub const SELECT: VirtKey = VirtKey(winuser::VK_SELECT);
+        pub const PRINT: VirtKey = VirtKey(winuser::VK_PRINT);
+        pub const EXECUTE: VirtKey = VirtKey(winuser::VK_EXECUTE);
+        pub const SNAPSHOT: VirtKey = VirtKey(winuser::VK_SNAPSHOT);
+        pub const INSERT: VirtKey = VirtKey(winuser::VK_INSERT);
+        pub const DELETE: VirtKey = VirtKey(winuser::VK_DELETE);
+        pub const HELP: VirtKey = VirtKey(winuser::VK_HELP);
+        pub const LWIN: VirtKey = VirtKey(winuser::VK_LWIN);
+        pub const RWIN: VirtKey = VirtKey(winuser::VK_RWIN);
+        pub const APPS: VirtKey = VirtKey(winuser::VK_APPS);
+        pub const SLEEP: VirtKey = VirtKey(winuser::VK_SLEEP);
+        pub const NUMPAD0: VirtKey = VirtKey(winuser::VK_NUMPAD0);
+        pub const NUMPAD1: VirtKey = VirtKey(winuser::VK_NUMPAD1);
+        pub const NUMPAD2: VirtKey = VirtKey(winuser::VK_NUMPAD2);
+        pub const NUMPAD3: VirtKey = VirtKey(winuser::VK_NUMPAD3);
+        pub const NUMPAD4: VirtKey = VirtKey(winuser::VK_NUMPAD4);
+        pub const NUMPAD5: VirtKey = VirtKey(winuser::VK_NUMPAD5);
+        pub const NUMPAD6: VirtKey = VirtKey(winuser::VK_NUMPAD6);
+        pub const NUMPAD7: VirtKey = VirtKey(winuser::VK_NUMPAD7);
+        pub const NUMPAD8: VirtKey = VirtKey(winuser::VK_NUMPAD8);
+        pub const NUMPAD9: VirtKey = VirtKey(winuser::VK_NUMPAD9);
+        pub const MULTIPLY: VirtKey = VirtKey(winuser::VK_MULTIPLY);
+        pub const ADD: VirtKey = VirtKey(winuser::VK_ADD);
+        pub const SEPARATOR: VirtKey = VirtKey(winuser::VK_SEPARATOR);
+        pub const SUBTRACT: VirtKey = VirtKey(winuser::VK_SUBTRACT);
+        pub const DECIMAL: VirtKey = VirtKey(winuser::VK_DECIMAL);
+        pub const DIVIDE: VirtKey = VirtKey(winuser::VK_DIVIDE);
+        pub const F1: VirtKey = VirtKey(winuser::VK_F1);
+        pub const F2: VirtKey = VirtKey(winuser::VK_F2);
+        pub const F3: VirtKey = VirtKey(winuser::VK_F3);
+        pub const F4: VirtKey = VirtKey(winuser::VK_F4);
+        pub const F5: VirtKey = VirtKey(winuser::VK_F5);
+        pub const F6: VirtKey = VirtKey(winuser::VK_F6);
+        pub const F7: VirtKey = VirtKey(winuser::VK_F7);
+        pub const F8: VirtKey = VirtKey(winuser::VK_F8);
+        pub const F9: VirtKey = VirtKey(winuser::VK_F9);
+        pub const F10: VirtKey = VirtKey(winuser::VK_F10);
+        pub const F11: VirtKey = VirtKey(winuser::VK_F11);
+        pub const F12: VirtKey = VirtKey(winuser::VK_F12);
+        pub const F13: VirtKey = VirtKey(winuser::VK_F13);
+        pub const F14: VirtKey = VirtKey(winuser::VK_F14);
+        pub const F15: VirtKey = VirtKey(winuser::VK_F15);
+        pub const F16: VirtKey = VirtKey(winuser::VK_F16);
+        pub const F17: VirtKey = VirtKey(winuser::VK_F17);
+        pub const F18: VirtKey = VirtKey(winuser::VK_F18);
+        pub const F19: VirtKey = VirtKey(winuser::VK_F19);
+        pub const F20: VirtKey = VirtKey(winuser::VK_F20);
+        pub const F21: VirtKey = VirtKey(winuser::VK_F21);
+        pub const F22: VirtKey = VirtKey(winuser::VK_F22);
+        pub const F23: VirtKey = VirtKey(winuser::VK_F23);
+        pub const F24: VirtKey = VirtKey(winuser::VK_F24);
+        pub const NUMLOCK: VirtKey = VirtKey(winuser::VK_NUMLOCK);
+        pub const SCROLL: VirtKey = VirtKey(winuser::VK_SCROLL);
+        pub const OEM_NEC_EQUAL: VirtKey = VirtKey(winuser::VK_OEM_NEC_EQUAL);
+        pub const OEM_FJ_JISHO: VirtKey = VirtKey(winuser::VK_OEM_FJ_JISHO);
+        pub const OEM_FJ_MASSHOU: VirtKey = VirtKey(winuser::VK_OEM_FJ_MASSHOU);
+        pub const OEM_FJ_TOUROKU: VirtKey = VirtKey(winuser::VK_OEM_FJ_TOUROKU);
+        pub const OEM_FJ_LOYA: VirtKey = VirtKey(winuser::VK_OEM_FJ_LOYA);
+        pub const OEM_FJ_ROYA: VirtKey = VirtKey(winuser::VK_OEM_FJ_ROYA);
+        pub const LSHIFT: VirtKey = VirtKey(winuser::VK_LSHIFT);
+        pub const RSHIFT: VirtKey = VirtKey(winuser::VK_RSHIFT);
+        pub const LCONTROL: VirtKey = VirtKey(winuser::VK_LCONTROL);
+        pub const RCONTROL: VirtKey = VirtKey(winuser::VK_RCONTROL);
+        pub const LMENU: VirtKey = VirtKey(winuser::VK_LMENU);
+        pub const RMENU: VirtKey = VirtKey(winuser::VK_RMENU);
+        pub const BROWSER_BACK: VirtKey = VirtKey(winuser::VK_BROWSER_BACK);
+        pub const BROWSER_FORWARD: VirtKey = VirtKey(winuser::VK_BROWSER_FORWARD);
+        pub const BROWSER_REFRESH: VirtKey = VirtKey(winuser::VK_BROWSER_REFRESH);
+        pub const BROWSER_STOP: VirtKey = VirtKey(winuser::VK_BROWSER_STOP);
+        pub const BROWSER_SEARCH: VirtKey = VirtKey(winuser::VK_BROWSER_SEARCH);
         pub const BROWSER_FAVORITES: VirtKey =
-            VirtKey(VirtKeyData::Vk(winuser::VK_BROWSER_FAVORITES));
-        pub const BROWSER_HOME: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_BROWSER_HOME));
-        pub const VOLUME_MUTE: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_VOLUME_MUTE));
-        pub const VOLUME_DOWN: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_VOLUME_DOWN));
-        pub const VOLUME_UP: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_VOLUME_UP));
+            VirtKey(winuser::VK_BROWSER_FAVORITES);
+        pub const BROWSER_HOME: VirtKey = VirtKey(winuser::VK_BROWSER_HOME);
+        pub const VOLUME_MUTE: VirtKey = VirtKey(winuser::VK_VOLUME_MUTE);
+        pub const VOLUME_DOWN: VirtKey = VirtKey(winuser::VK_VOLUME_DOWN);
+        pub const VOLUME_UP: VirtKey = VirtKey(winuser::VK_VOLUME_UP);
         pub const MEDIA_NEXT_TRACK: VirtKey =
-            VirtKey(VirtKeyData::Vk(winuser::VK_MEDIA_NEXT_TRACK));
+            VirtKey(winuser::VK_MEDIA_NEXT_TRACK);
         pub const MEDIA_PREV_TRACK: VirtKey =
-            VirtKey(VirtKeyData::Vk(winuser::VK_MEDIA_PREV_TRACK));
-        pub const MEDIA_STOP: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_MEDIA_STOP));
+            VirtKey(winuser::VK_MEDIA_PREV_TRACK);
+        pub const MEDIA_STOP: VirtKey = VirtKey(winuser::VK_MEDIA_STOP);
         pub const MEDIA_PLAY_PAUSE: VirtKey =
-            VirtKey(VirtKeyData::Vk(winuser::VK_MEDIA_PLAY_PAUSE));
-        pub const LAUNCH_MAIL: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_LAUNCH_MAIL));
+            VirtKey(winuser::VK_MEDIA_PLAY_PAUSE);
+        pub const LAUNCH_MAIL: VirtKey = VirtKey(winuser::VK_LAUNCH_MAIL);
         pub const LAUNCH_MEDIA_SELECT: VirtKey =
-            VirtKey(VirtKeyData::Vk(winuser::VK_LAUNCH_MEDIA_SELECT));
-        pub const LAUNCH_APP1: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_LAUNCH_APP1));
-        pub const LAUNCH_APP2: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_LAUNCH_APP2));
-        pub const OEM_1: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_OEM_1));
-        pub const OEM_PLUS: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_OEM_PLUS));
-        pub const OEM_COMMA: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_OEM_COMMA));
-        pub const OEM_MINUS: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_OEM_MINUS));
-        pub const OEM_PERIOD: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_OEM_PERIOD));
-        pub const OEM_2: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_OEM_2));
-        pub const OEM_3: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_OEM_3));
-        pub const OEM_4: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_OEM_4));
-        pub const OEM_5: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_OEM_5));
-        pub const OEM_6: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_OEM_6));
-        pub const OEM_7: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_OEM_7));
-        pub const OEM_8: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_OEM_8));
-        pub const OEM_AX: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_OEM_AX));
-        pub const OEM_102: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_OEM_102));
-        pub const ICO_HELP: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_ICO_HELP));
-        pub const ICO_00: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_ICO_00));
-        pub const PROCESSKEY: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_PROCESSKEY));
-        pub const ICO_CLEAR: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_ICO_CLEAR));
-        pub const PACKET: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_PACKET));
-        pub const OEM_RESET: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_OEM_RESET));
-        pub const OEM_JUMP: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_OEM_JUMP));
-        pub const OEM_PA1: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_OEM_PA1));
-        pub const OEM_PA2: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_OEM_PA2));
-        pub const OEM_PA3: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_OEM_PA3));
-        pub const OEM_WSCTRL: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_OEM_WSCTRL));
-        pub const OEM_CUSEL: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_OEM_CUSEL));
-        pub const OEM_ATTN: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_OEM_ATTN));
-        pub const OEM_FINISH: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_OEM_FINISH));
-        pub const OEM_COPY: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_OEM_COPY));
-        pub const OEM_AUTO: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_OEM_AUTO));
-        pub const OEM_ENLW: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_OEM_ENLW));
-        pub const OEM_BACKTAB: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_OEM_BACKTAB));
-        pub const ATTN: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_ATTN));
-        pub const CRSEL: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_CRSEL));
-        pub const EXSEL: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_EXSEL));
-        pub const EREOF: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_EREOF));
-        pub const PLAY: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_PLAY));
-        pub const ZOOM: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_ZOOM));
-        pub const NONAME: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_NONAME));
-        pub const PA1: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_PA1));
-        pub const OEM_CLEAR: VirtKey = VirtKey(VirtKeyData::Vk(winuser::VK_OEM_CLEAR));
+            VirtKey(winuser::VK_LAUNCH_MEDIA_SELECT);
+        pub const LAUNCH_APP1: VirtKey = VirtKey(winuser::VK_LAUNCH_APP1);
+        pub const LAUNCH_APP2: VirtKey = VirtKey(winuser::VK_LAUNCH_APP2);
+        pub const OEM_1: VirtKey = VirtKey(winuser::VK_OEM_1);
+        pub const OEM_PLUS: VirtKey = VirtKey(winuser::VK_OEM_PLUS);
+        pub const OEM_COMMA: VirtKey = VirtKey(winuser::VK_OEM_COMMA);
+        pub const OEM_MINUS: VirtKey = VirtKey(winuser::VK_OEM_MINUS);
+        pub const OEM_PERIOD: VirtKey = VirtKey(winuser::VK_OEM_PERIOD);
+        pub const OEM_2: VirtKey = VirtKey(winuser::VK_OEM_2);
+        pub const OEM_3: VirtKey = VirtKey(winuser::VK_OEM_3);
+        pub const OEM_4: VirtKey = VirtKey(winuser::VK_OEM_4);
+        pub const OEM_5: VirtKey = VirtKey(winuser::VK_OEM_5);
+        pub const OEM_6: VirtKey = VirtKey(winuser::VK_OEM_6);
+        pub const OEM_7: VirtKey = VirtKey(winuser::VK_OEM_7);
+        pub const OEM_8: VirtKey = VirtKey(winuser::VK_OEM_8);
+        pub const OEM_AX: VirtKey = VirtKey(winuser::VK_OEM_AX);
+        pub const OEM_102: VirtKey = VirtKey(winuser::VK_OEM_102);
+        pub const ICO_HELP: VirtKey = VirtKey(winuser::VK_ICO_HELP);
+        pub const ICO_00: VirtKey = VirtKey(winuser::VK_ICO_00);
+        pub const PROCESSKEY: VirtKey = VirtKey(winuser::VK_PROCESSKEY);
+        pub const ICO_CLEAR: VirtKey = VirtKey(winuser::VK_ICO_CLEAR);
+        pub const PACKET: VirtKey = VirtKey(winuser::VK_PACKET);
+        pub const OEM_RESET: VirtKey = VirtKey(winuser::VK_OEM_RESET);
+        pub const OEM_JUMP: VirtKey = VirtKey(winuser::VK_OEM_JUMP);
+        pub const OEM_PA1: VirtKey = VirtKey(winuser::VK_OEM_PA1);
+        pub const OEM_PA2: VirtKey = VirtKey(winuser::VK_OEM_PA2);
+        pub const OEM_PA3: VirtKey = VirtKey(winuser::VK_OEM_PA3);
+        pub const OEM_WSCTRL: VirtKey = VirtKey(winuser::VK_OEM_WSCTRL);
+        pub const OEM_CUSEL: VirtKey = VirtKey(winuser::VK_OEM_CUSEL);
+        pub const OEM_ATTN: VirtKey = VirtKey(winuser::VK_OEM_ATTN);
+        pub const OEM_FINISH: VirtKey = VirtKey(winuser::VK_OEM_FINISH);
+        pub const OEM_COPY: VirtKey = VirtKey(winuser::VK_OEM_COPY);
+        pub const OEM_AUTO: VirtKey = VirtKey(winuser::VK_OEM_AUTO);
+        pub const OEM_ENLW: VirtKey = VirtKey(winuser::VK_OEM_ENLW);
+        pub const OEM_BACKTAB: VirtKey = VirtKey(winuser::VK_OEM_BACKTAB);
+        pub const ATTN: VirtKey = VirtKey(winuser::VK_ATTN);
+        pub const CRSEL: VirtKey = VirtKey(winuser::VK_CRSEL);
+        pub const EXSEL: VirtKey = VirtKey(winuser::VK_EXSEL);
+        pub const EREOF: VirtKey = VirtKey(winuser::VK_EREOF);
+        pub const PLAY: VirtKey = VirtKey(winuser::VK_PLAY);
+        pub const ZOOM: VirtKey = VirtKey(winuser::VK_ZOOM);
+        pub const NONAME: VirtKey = VirtKey(winuser::VK_NONAME);
+        pub const PA1: VirtKey = VirtKey(winuser::VK_PA1);
+        pub const OEM_CLEAR: VirtKey = VirtKey(winuser::VK_OEM_CLEAR);
+    }
+
+    impl fmt::Display for VirtKey {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            match self.0 {
+                c => {
+                    write!(f, "{}", c).map_err(|_| fmt::Error)?;
+                }
+            }
+            Ok(())
+        }
     }
 
     #[derive(Clone, Copy)]
@@ -679,10 +853,42 @@ pub mod accelerators {
         CtrlAltShift,
     }
 
+    impl fmt::Display for Modifier {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            let v = match self {
+                Modifier::None => "",
+                Modifier::Ctrl => ", CONTROL",
+                Modifier::Alt => ", ALT",
+                Modifier::Shift => ", SHIFT",
+                Modifier::CtrlAlt => ", CONTROL, ALT",
+                Modifier::CtrlShift => ", CONTROL, SHIFT",
+                Modifier::AltShift => ", ALT, SHIFT",
+                Modifier::CtrlAltShift => ", CONTROL, ALT, SHIFT",
+            };
+            write!(f, "{}", v).map_err(|_| fmt::Error)?;
+            Ok(())
+        }
+    }
+
     #[derive(Clone, Copy)]
     pub enum ASCIIModifier {
         None,
         Ctrl,
+        Alt,
+        CtrlAlt,
+    }
+
+    impl fmt::Display for ASCIIModifier {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            let v = match self {
+                ASCIIModifier::None => "",
+                ASCIIModifier::Ctrl => ", CONTROL",
+                ASCIIModifier::Alt => ", ALT",
+                ASCIIModifier::CtrlAlt => ", CONTROL, ALT",
+            };
+            write!(f, "{}", v).map_err(|_| fmt::Error)?;
+            Ok(())
+        }
     }
 
     #[derive(Clone, Copy)]
@@ -744,30 +950,60 @@ pub mod accelerators {
     builder_build_method!(AcceleratorsBuilder, crate::resource::Accelerators);
 
     impl AcceleratorsBuilder {
-        pub fn string(mut self, id: impl Into<Id>, event: Event) -> Self {
+        pub fn event(mut self, id: impl Into<Id>, event: Event) -> Self {
             let id = id.into();
             let common_items = (self.0).0.access_fallback_mut();
             common_items.events.push((id, event));
             self
         }
 
-        pub fn lang_specific_string(mut self, lang: Lang, id: impl Into<Id>, event: Event) -> Self {
+        pub fn lang_specific_event(mut self, lang: Lang, id: impl Into<Id>, event: Event) -> Self {
             let id = id.into();
             let lang_items = (self.0).0.access_lang_specific_mut(lang);
             lang_items.events.push((id, event));
             self
         }
     }
+
+    impl AcceleratorsData {
+        pub(crate) fn is_missing_for_lang(&self, l: crate::Lang) -> bool {
+            self.0.get(l).is_none()
+        }
+
+        pub(crate) fn write_resource_header_extras(&self, w: &mut dyn std::io::Write, l: crate::Lang) -> Result<(), std::io::Error> {
+            let items = self.0.get(l).expect("unreachable!");
+            crate::codegen::write_extra_info(w, &items.extra_info)?;
+            Ok(())
+        }
+
+        pub(crate) fn write_resource_segment(&self, w: &mut dyn std::io::Write, l: crate::Lang) -> Result<(), std::io::Error> {
+            let items = self.0.get(l).expect("unreachable!");
+            write!(w, "{{\n")?;
+            for (id, event) in items.events.iter() {
+                let noinvert = if event.noinvert { ", NOINVERT" } else { "" };
+                match event.key {
+                    Key::ASCII{ascii_key, modifier} => {
+                        write!(w, "\t{}, {}, ASCII{}{}\n", ascii_key, id, modifier, noinvert)?;
+                    },
+                    Key::VirtKey{virt_key, modifier} => {
+                        write!(w, "\t{}, {}, VIRTKEY{}{}\n", virt_key, id, modifier, noinvert)?;
+                    }
+                }
+            }
+            write!(w, "}}\n")?;
+            Ok(())
+        }
+    }
 }
 
 pub mod menu {
     use crate::{CowStr, Id, OptionLangSpecific};
-    use std::rc::Rc;
+    use crate::MultiLangText;
     use winapi::ctypes::c_int;
     use winapi::shared::minwindef::UINT;
     use winapi::um::winuser;
 
-    #[derive(Clone, Copy, Default)]
+    #[derive(Clone, Copy, Default, PartialEq)]
     pub struct MenuType(UINT);
 
     impl MenuType {
@@ -784,18 +1020,18 @@ pub mod menu {
 
     bitflags_bitor_method!(MenuType);
 
-    #[derive(Clone, Copy, Default)]
+    #[derive(Clone, Copy, Default, PartialEq)]
     pub struct MenuState(UINT);
 
     impl MenuState {
         // pub const GRAYED: MenuState = MenuState(winuser::MFS_GRAYED); // alias of DISABLED
         pub const DISABLED: MenuState = MenuState(winuser::MFS_DISABLED);
         pub const CHECKED: MenuState = MenuState(winuser::MFS_CHECKED);
-        pub const HILITE: MenuState = MenuState(winuser::MFS_HILITE);
+        pub const HIGHLIGHTED: MenuState = MenuState(winuser::MFS_HILITE);
         // pub const ENABLED: MenuState = MenuState(winuser::MFS_ENABLED); // zero, not needed
         // pub const UNCHECKED: MenuState = MenuState(winuser::MFS_UNCHECKED); // zero, not needed
         // pub const UNHILITE: MenuState = MenuState(winuser::MFS_UNHILITE); // zero, not needed
-        pub const DEFAULT: MenuState = MenuState(winuser::MFS_DEFAULT);
+        pub const DEFAULT_ITEM: MenuState = MenuState(winuser::MFS_DEFAULT);
     }
 
     bitflags_bitor_method!(MenuState);
@@ -807,7 +1043,7 @@ pub mod menu {
     }
 
     struct MenuItem {
-        id: Id,
+        id: Option<Id>,
         text: OptionLangSpecific<CowStr>,
         ty: MenuType,
         state: MenuState,
@@ -821,14 +1057,169 @@ pub mod menu {
 
     builder_implement_priv_default!(MenuBuilder);
     builder_build_method!(MenuBuilder, crate::resource::Menu);
+
+    impl MenuBuilder {
+        fn internal_add_item(&mut self, id: Option<Id>, text: MultiLangText, ty: MenuType, state: MenuState, popup: Option<PopupData>) {
+            (self.0).0.push(MenuItem {
+                id,
+                text: text.0,
+                ty,
+                state,
+                popup
+            });
+        }
+    }
+
+    pub struct PopupBuilder(PopupData);
+    builder_implement_priv_default!(PopupBuilder);
+
+    impl PopupBuilder {
+        pub fn help_id(mut self, help_id: c_int) -> Self {
+            (self.0).help_id = Some(help_id);
+            self
+        }
+        fn internal_add_item(&mut self, id: Option<Id>, text: MultiLangText, ty: MenuType, state: MenuState, popup: Option<PopupData>) {
+            (self.0).items.push(MenuItem {
+                id,
+                text: text.0,
+                ty,
+                state,
+                popup
+            });
+        }
+    }
+
+    macro_rules! declare_menu_append_operations {
+        ($builder_ty:ident) => {
+            impl $builder_ty {
+                pub fn popup(mut self, text: impl Into<MultiLangText>, popup_building: impl FnOnce(PopupBuilder) -> PopupBuilder) -> Self {
+                    let popup_builder = popup_building(<PopupBuilder as crate::PrivDefault>::priv_default());
+                    self.internal_add_item(None, text.into(), MenuType::default(), MenuState::default(), Some(popup_builder.0));
+                    self
+                }
+                pub fn item(mut self, id: impl Into<Id>, text: impl Into<MultiLangText>) -> Self {
+                    self.internal_add_item(Some(id.into()), text.into(), 
+                        MenuType::default(), MenuState::default(), None);
+                    self
+                }
+                pub fn separator(mut self) -> Self {
+                    self.internal_add_item(None, MultiLangText::empty(), 
+                        MenuType::SEPARATOR, MenuState::default(), None);
+                    self
+                }
+
+                pub fn complex_popup(mut self, id: Option<impl Into<Id>>, text: impl Into<MultiLangText>, ty: MenuType, state: MenuState, popup_building: impl FnOnce(PopupBuilder) -> PopupBuilder) -> Self {
+                    let popup_builder = popup_building(<PopupBuilder as crate::PrivDefault>::priv_default());
+                    self.internal_add_item(id.map(Into::into), text.into(), 
+                        ty, state, Some(popup_builder.0));
+                    self
+                }
+
+                pub fn complex_item(mut self, id: Option<impl Into<Id>>, text: impl Into<MultiLangText>, ty: MenuType, state: MenuState) -> Self {
+                    self.internal_add_item(id.map(Into::into), text.into(), 
+                        ty, state, None);
+                    self
+                }
+            }
+        };
+    }
+
+    declare_menu_append_operations!(MenuBuilder);
+    declare_menu_append_operations!(PopupBuilder);
+
+    use std::io::Error as IOError;
+
+    impl MenuData {
+        pub(crate) fn is_missing_for_lang(&self, lang: crate::Lang) -> bool {
+            for item in self.0.iter() {
+                if item.text.get(lang).is_some() {
+                    return false;
+                }
+            }
+            true
+        }
+
+        pub(crate) fn write_resource_header_extras(&self, w: &mut dyn std::io::Write, l: crate::Lang) -> Result<(), IOError> {
+            Ok(())
+        }
+
+        fn write_menu_item_resouce_segment(w: &mut dyn std::io::Write, lang: crate::Lang, item: &MenuItem, indent: usize) -> Result<(), IOError> {
+            let text = if let Some(text) = item.text.get(lang) {
+                text
+            } else {
+                return Ok(());
+            };
+            for _ in 0..indent {
+                write!(w, "\t")?;
+            }
+            let is_popup = item.popup.is_some(); 
+            let kind = if is_popup { "POPUP" } else { "MENUITEM" };
+            write!(w, "{} ", kind)?;
+            crate::codegen::write_narrow_str(w, text)?;
+            let exist_id = item.id.is_some();
+            let exist_ty = item.ty != MenuType::default();
+            let exist_state = item.state != MenuState::default();
+            let exist_help_id = item.popup.as_ref().map(|popup| popup.help_id.is_some()).unwrap_or(false);
+            if exist_id || exist_ty || exist_state || exist_help_id {
+                write!(w, ", ")?;
+            }
+            if exist_id {
+                let id = item.id.clone().unwrap();
+                write!(w, "{}", id)?;
+            }
+            if exist_ty || exist_state || exist_help_id {
+                write!(w, ", ")?;
+            }
+            if exist_ty {
+                crate::codegen::write_dword(w, item.ty.0)?;
+            }
+            if exist_state || exist_help_id {
+                write!(w, ", ")?;
+            }
+            if exist_state {
+                crate::codegen::write_dword(w, item.state.0)?;
+            }
+            if exist_help_id {
+                write!(w, ", ")?;
+            }
+            if exist_help_id {
+                crate::codegen::write_c_int(w, item.popup.as_ref().unwrap().help_id.clone().unwrap())?;
+            }
+            write!(w, "\n")?;
+            if is_popup {
+                for _ in 0..indent {
+                    write!(w, "\t")?;
+                }
+                write!(w, "{{\n")?;
+                let inner_indent = indent + 1;
+                for inner_item in item.popup.as_ref().unwrap().items.iter() {
+                    Self::write_menu_item_resouce_segment(w, lang, inner_item, inner_indent)?;
+                }
+                for _ in 0..indent {
+                    write!(w, "\t")?;
+                }
+                write!(w, "}}\n")?;
+            }
+            Ok(())            
+        }
+
+        pub(crate) fn write_resource_segment(&self, w: &mut dyn std::io::Write, l: crate::Lang) -> Result<(), IOError> {
+            write!(w, "{{\n")?;
+            for item in self.0.iter() {
+                Self::write_menu_item_resouce_segment(w, l, item, 1)?;
+            }
+            write!(w, "}}\n")?;
+            Ok(())
+        }
+    }
 }
 
 pub mod dialog {
     use crate::{CowStr, ExtraInfo, Id, IdOrName, OptionLangSpecific};
     use winapi::ctypes::c_int;
     use winapi::ctypes::c_long;
+    use winapi::shared::minwindef::TRUE;
     use winapi::shared::minwindef::{BOOL, BYTE, DWORD};
-    use winapi::shared::minwindef::{FALSE, TRUE};
     use winapi::um::wingdi;
 
     pub struct Rect {
@@ -1061,6 +1452,7 @@ pub mod dialog {
     builder_implement_priv_default!(DialogBuilder);
     builder_build_method!(DialogBuilder, crate::resource::Dialog);
 
+    unimplemented_resouce_data_write_segment!(DialogData);
 }
 
 pub mod version_info {
@@ -1100,6 +1492,7 @@ pub mod version_info {
 
     builder_implement_priv_default!(VersionInfoBuilder);
     builder_build_method!(VersionInfoBuilder, crate::resource::VersionInfo);
+    unimplemented_resouce_data_write_segment!(VersionInfoData);
 }
 
 pub mod rc_inline {
@@ -1123,6 +1516,7 @@ pub mod rc_inline {
     builder_implement_priv_default!(RcInlineBuilder);
     builder_extra_info_methods2!(RcInlineBuilder);
     builder_build_method!(RcInlineBuilder, crate::resource::RcInline);
+    unimplemented_resouce_data_write_segment!(RcInlineData);
 }
 
 pub mod user_defined {
@@ -1149,4 +1543,210 @@ pub mod user_defined {
     pub struct UserDefinedBuilder(UserDefinedData);
     builder_implement_priv_default!(UserDefinedBuilder);
     builder_build_method!(UserDefinedBuilder, crate::resource::UserDefined);
+}
+
+impl Build {
+    pub fn generate_rc_file(self, path: &std::path::Path) -> Result<(), io::Error> {
+        use std::fs::File;
+        let mut file = File::create(path)?;
+        codegen::write_header(&mut file)?;
+
+        for (lang, resource_list) in self.resources {
+            for (id_or_name, resource) in resource_list {
+                resource.write_script_segment(&mut file, lang, id_or_name)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn compile_rc_file(path: &std::path::Path) -> Result<(), io::Error> {
+        embed_resource::compile(path);
+        Ok(())
+    }
+
+    pub fn compile(self) -> Result<(), io::Error> {
+        use std::path::PathBuf;
+        let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR variable is not set");
+        let mut rc_file_path = PathBuf::from(out_dir);
+        rc_file_path.push("resource.rc");
+        self.generate_rc_file(&rc_file_path)?;
+        println!("rerun-if-changed={}", rc_file_path.display());
+        Self::compile_rc_file(&rc_file_path)?;
+
+        Ok(())
+    }
+}
+
+mod codegen {
+    use std::io::{Error as IOError, Write};
+    use crate::{Id, IdOrName};
+    use crate::CowStr;
+    use crate::resource;
+
+    pub(crate) fn write_header(w: &mut dyn Write) -> Result<(), IOError> {
+        write!(
+            w,
+            "// Resource script automatically generated by RESW-RS.\n"
+        )?;
+        write!(w, "// Do not edit this file manually.\n")?;
+        write!(w, "\n")?;
+        write!(w, "#pragma codepage(65001)\n")?;
+        Ok(())
+    }
+
+    pub(crate) fn write_c_int(w: &mut dyn Write, c_int: winapi::ctypes::c_int) -> Result<(), IOError> {
+        if std::mem::size_of_val(&c_int) > 2 {
+            write!(w, "{}L", c_int)
+        } else {
+            write!(w, "{}", c_int)
+        }
+    }
+
+    pub(crate) fn write_dword(w: &mut dyn Write, dword: winapi::shared::minwindef::DWORD) -> Result<(), IOError> {
+        write!(w, "{}L", dword)
+    }
+
+    pub(crate) fn need_escape_narrow_byte(v: &u8) -> bool {
+        match v {
+            0..=31u8 => true,
+            b'\\' => true,
+            b'\"' => true,
+            127u8 => true,
+            _ => false,
+        }
+    }
+
+    pub(crate) fn need_escape_wide_u16(v: &u16) -> bool {
+        match v {
+            0..=31u16 => true,
+            92u16 /*b'\\'*/ => true,
+            34u16 /*b'\"'*/ => true,
+            127u16 => true,
+            32u16..=126u16 => false,
+            _ => true,
+        }
+    }
+
+
+    pub(crate) fn write_narrow_str(w: &mut dyn Write, string: &CowStr) -> Result<(), IOError> {
+        write!(w, "\"")?;
+        let mut rest_string = string.as_bytes();
+        while !rest_string.is_empty() {
+            let seq = rest_string.split(need_escape_narrow_byte).next().expect("unreachable");
+            if !seq.is_empty() {
+                w.write_all(seq)?;
+                rest_string = &rest_string[seq.len()..];
+            } else {
+                write!(w, "\\{:03o}", rest_string[0])?;
+                rest_string = &rest_string[1..];
+            }
+        }
+        write!(w, "\"")?;
+        Ok(())
+    }
+
+    #[cfg(windows)]
+    fn write_wide_os_str(w: &mut dyn Write, name: &std::ffi::OsStr) -> Result<(), IOError> {
+        use std::os::windows::ffi::OsStrExt;
+        write!(w, "L\"")?;
+        for ch in name.encode_wide() {
+            if !need_escape_wide_u16(&ch) {
+                debug_assert!(ch <= std::u8::MAX as _);
+                let ch: [u8; 1] = [ch as u8];
+                w.write_all(&ch)?;
+            } else {
+                write!(w, "\\x{:04x}", ch)?;
+            }
+        }
+        write!(w, "\"")?;
+        Ok(())
+    }
+
+    fn write_id_or_name(w: &mut dyn Write, id_or_name: &IdOrName) -> Result<(), IOError> {
+        match id_or_name {
+            IdOrName::Id(id) => write!(w, "{}", id),
+            IdOrName::Name(name) => write_narrow_str(w, name),
+        }
+    }
+
+    fn write_path(w: &mut dyn Write, path: &std::path::Path) -> Result<(), IOError> {
+        let os_str = path.as_os_str();
+        write_wide_os_str(w, os_str)
+    }
+    
+    fn ensure_id_or_name_ignorable(id_or_name: &IdOrName) {
+        match id_or_name {
+            &IdOrName::Id(Id(v)) => {
+                if v == 0 || v == (-1 as _) {
+                    return;
+                }
+            },
+            IdOrName::Name(s) => {
+                if s == "" || s == " " || s == "_" {
+                    return;
+                }
+            },
+        }
+        eprintln!("Warning: Expected ignorable id or name, found {:?}. Ignored.", id_or_name);
+    }
+
+    pub(crate) fn write_extra_info(
+        w: &mut dyn Write,
+        extra_info: &Option<crate::ExtraInfo>
+    ) -> Result<(), IOError> {
+        if let Some(extra_info) = extra_info {
+            if let Some(characteristics) = &extra_info.characteristics {
+                write!(w, " ")?;
+                write_dword(w, *characteristics)?;
+            }
+            if let Some(version) = &extra_info.version {
+                write!(w, " ")?;
+                write_dword(w, *version)?;
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) fn write_path_only_resource(
+        w: &mut dyn Write,
+        lang: crate::Lang,
+        id_or_name: crate::IdOrName,
+        res_type_keyword: &'static str,
+        path: &std::path::Path,
+    ) -> Result<(), IOError> {
+        write_resource_header(w, lang, id_or_name, res_type_keyword)?;
+        write!(w, " ")?;
+        let mut absolute_path = std::env::current_dir()?;
+        absolute_path.push(path);
+        write_path(w, &absolute_path)?;
+        write!(w, "\n")?;
+        Ok(())
+    }
+
+    pub(crate) fn write_resource_header(
+        w: &mut dyn Write,
+        lang: crate::Lang,
+        id_or_name: crate::IdOrName,
+        res_type_keyword: &'static str,
+    ) -> Result<(), IOError> {
+        write!(w, "LANGUAGE 0x{:x}, 0x{:x}\n", lang.0, lang.1)?;
+        match res_type_keyword {
+            resource::StringTable::TYPE_KEYWORD => {
+                ensure_id_or_name_ignorable(&id_or_name);
+            },
+            resource::VersionInfo::TYPE_KEYWORD => {
+                if id_or_name != IdOrName::Id(Id(1)) {
+                    ensure_id_or_name_ignorable(&id_or_name);
+                }
+                write!(w, "1 ")?;
+            },
+            _ => {
+                write_id_or_name(w, &id_or_name)?;
+                write!(w, " ")?;
+            }
+        }
+        write!(w, "{} ", res_type_keyword)?;
+        Ok(())
+    }
 }

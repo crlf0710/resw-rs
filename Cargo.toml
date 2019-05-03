@@ -7,6 +7,7 @@ license = "Apache2/MIT"
 
 [dependencies]
 winapi = {version = "0.3", features = ["minwindef", "winnt", "winuser", "wingdi"]}
+embed-resource = "1"
 
 [features]
 unstable = []
