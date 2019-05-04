@@ -2003,6 +2003,17 @@ pub mod dialog {
             self.0.controls.push_lang_specific(lang, (id.into(), control.into_control()));
             self
         }
+
+        pub fn rect(mut self, rect: Rect) -> Self {
+            self.0.rect.insert_universal(rect);
+            self
+        }
+
+        pub fn lang_specific_rect(mut self, lang: crate::Lang, rect: Rect) -> Self {
+            self.0.rect.insert_lang_specific(lang, rect);
+            self
+        }
+
     }
 
     impl DialogData {
