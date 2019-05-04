@@ -126,7 +126,25 @@ where
     }
 }
 
-pub const NOT_USEFUL_ID: Id = Id(-1 as _);
+pub mod predefined_id {
+    use winapi::um::winuser;
+    use crate::Id;
+
+    pub const DEFAULT: Id = Id(-1 as _);
+
+    pub const OK: Id = Id(winuser::IDOK as _);
+    pub const CANCEL: Id = Id(winuser::IDCANCEL as _);
+    pub const ABORT: Id = Id(winuser::IDABORT as _);
+    pub const RETRY: Id = Id(winuser::IDRETRY as _);
+    pub const IGNORE: Id = Id(winuser::IDIGNORE as _);
+    pub const YES: Id = Id(winuser::IDYES as _);
+    pub const NO: Id = Id(winuser::IDNO as _);
+    pub const CLOSE: Id = Id(winuser::IDCLOSE as _);
+    pub const HELP: Id = Id(winuser::IDHELP as _);
+    pub const TRY_AGAIN: Id = Id(winuser::IDTRYAGAIN as _);
+    pub const CONTINUE: Id = Id(winuser::IDCONTINUE as _);
+    pub const TIMEOUT: Id = Id(winuser::IDTIMEOUT as _);
+}
 
 pub struct Build {
     resources: BTreeMap<Lang, Vec<(IdOrName, Box<dyn Resource>)>>,
@@ -297,8 +315,8 @@ pub mod resource {
                     version: Option<DWORD>,
                 ) -> Self {
                     use crate::ExtraInfo;
-                    let fallback_items = (self.0).0.access_fallback_mut();
-                    fallback_items.extra_info = Some(ExtraInfo {
+                    let universal_items = (self.0).0.access_universal_mut();
+                    universal_items.extra_info = Some(ExtraInfo {
                         characteristics,
                         version,
                     });
@@ -332,7 +350,7 @@ pub mod resource {
                     version: Option<DWORD>,
                 ) -> Self {
                     use crate::ExtraInfo;
-                    (self.0).extra_info.insert_fallback(ExtraInfo {
+                    (self.0).extra_info.insert_universal(ExtraInfo {
                         characteristics,
                         version,
                     });
@@ -404,15 +422,15 @@ pub mod resource {
     macro_rules! unimplemented_resouce_data_write_segment {
         ($type_name:ident) => {
             impl $type_name {
-                pub(crate) fn is_missing_for_lang(&self, l: crate::Lang) -> bool {
+                pub(crate) fn is_missing_for_lang(&self, _l: crate::Lang) -> bool {
                     true
                 }
 
-                pub(crate) fn write_resource_header_extras(&self, w: &mut dyn std::io::Write, l: crate::Lang) -> Result<(), std::io::Error> {
+                pub(crate) fn write_resource_header_extras(&self, _w: &mut dyn std::io::Write, _l: crate::Lang) -> Result<(), std::io::Error> {
                     unimplemented!()
                 }
 
-                pub(crate) fn write_resource_segment(&self, w: &mut dyn std::io::Write, l: crate::Lang) -> Result<(), std::io::Error> {
+                pub(crate) fn write_resource_segment(&self, _w: &mut dyn std::io::Write, _l: crate::Lang) -> Result<(), std::io::Error> {
                     unimplemented!()
                 }
             }
@@ -489,7 +507,7 @@ impl<T> OptionLangSpecific<T> {
         self.0.entry(Some(lang)).or_default()
     }
 
-    fn access_fallback_mut(&mut self) -> &mut T
+    fn access_universal_mut(&mut self) -> &mut T
     where
         T: Default,
     {
@@ -500,7 +518,7 @@ impl<T> OptionLangSpecific<T> {
         self.0.insert(Some(lang), v);
     }
 
-    fn insert_fallback(&mut self, v: T) {
+    fn insert_universal(&mut self, v: T) {
         self.0.insert(None, v);
     }
 
@@ -520,6 +538,31 @@ impl<T> Default for OptionLangSpecific<T> {
         OptionLangSpecific(BTreeMap::default())
     }
 }
+
+struct VecLangSpecific<T>(Vec<(Option<Lang>, T)>);
+
+impl<T> Default for VecLangSpecific<T> {
+    fn default() -> Self {
+        VecLangSpecific(Vec::new())
+    }
+}
+
+impl<T> VecLangSpecific<T> {
+    fn push_universal(&mut self, v: T) {
+        self.0.push((None, v));
+    }
+
+    fn push_lang_specific(&mut self, lang: Lang, v: T) {
+        self.0.push((Some(lang), v));
+    }
+
+    fn iter(&self, lang: Lang) -> impl Iterator<Item = &T> {
+        self.0.iter().filter(move |&&(ref iter_lang, ref _iter_val)| {
+            iter_lang == &None || iter_lang == &Some(lang)
+        }).map(|&(ref _iter_lang, ref iter_val)| iter_val)
+    }
+}
+
 
 pub struct ExtraInfo {
     pub characteristics: Option<DWORD>,
@@ -542,7 +585,7 @@ impl MultiLangText {
 impl<T> From<T> for MultiLangText where T: Into<CowStr> {
     fn from(v: T) -> Self {
         let mut r = Self::empty();
-        r.0.insert_fallback(v.into());
+        r.0.insert_universal(v.into());
         r
     }
 }
@@ -574,8 +617,8 @@ pub mod string_table {
         pub fn string(mut self, id: impl Into<Id>, string: impl AsRef<str>) -> Self {
             let id = id.into();
             let string = string.as_ref().to_owned();
-            let fallback_items = (self.0).0.access_fallback_mut();
-            fallback_items.strings.push((id, string));
+            let universal_items = (self.0).0.access_universal_mut();
+            universal_items.strings.push((id, string));
             self
         }
 
@@ -952,8 +995,8 @@ pub mod accelerators {
     impl AcceleratorsBuilder {
         pub fn event(mut self, id: impl Into<Id>, event: Event) -> Self {
             let id = id.into();
-            let common_items = (self.0).0.access_fallback_mut();
-            common_items.events.push((id, event));
+            let universal_items = (self.0).0.access_universal_mut();
+            universal_items.events.push((id, event));
             self
         }
 
@@ -972,7 +1015,7 @@ pub mod accelerators {
 
         pub(crate) fn write_resource_header_extras(&self, w: &mut dyn std::io::Write, l: crate::Lang) -> Result<(), std::io::Error> {
             let items = self.0.get(l).expect("unreachable!");
-            crate::codegen::write_extra_info(w, &items.extra_info)?;
+            crate::codegen::write_extra_info(w, items.extra_info.as_ref())?;
             Ok(())
         }
 
@@ -1103,7 +1146,7 @@ pub mod menu {
                     self
                 }
                 pub fn separator(mut self) -> Self {
-                    self.internal_add_item(None, MultiLangText::empty(), 
+                    self.internal_add_item(None, MultiLangText::from(""), 
                         MenuType::SEPARATOR, MenuState::default(), None);
                     self
                 }
@@ -1139,7 +1182,7 @@ pub mod menu {
             true
         }
 
-        pub(crate) fn write_resource_header_extras(&self, w: &mut dyn std::io::Write, l: crate::Lang) -> Result<(), IOError> {
+        pub(crate) fn write_resource_header_extras(&self, _: &mut dyn std::io::Write, _: crate::Lang) -> Result<(), IOError> {
             Ok(())
         }
 
@@ -1214,98 +1257,436 @@ pub mod menu {
     }
 }
 
+use winapi::ctypes::c_int;
+#[derive(Clone, Copy, Default)]
+pub struct Rect {
+    x: c_int,
+    y: c_int,
+    width: c_int,
+    height: c_int,
+}
+
+impl Rect {
+    pub fn new(x: c_int, y: c_int, width: c_int, height: c_int) -> Self {
+        Rect {
+            x, y, width, height
+        }
+    }
+}
+
+use winapi::ctypes::c_long;
+use winapi::shared::minwindef::TRUE;
+use winapi::shared::minwindef::{BOOL, BYTE};
+use winapi::um::wingdi;
+
+struct Font {
+    typeface: CowStr,
+    size: FontSize,
+    weight: FontWeight,
+    italic: FontItalic,
+    charset: FontCharset,
+}
+
+pub struct FontSize(c_int);
+
+impl FontSize {
+    pub fn pt(v: c_int) -> Self {
+        FontSize(v)
+    }
+}
+
+#[derive(Default)]
+pub struct FontWeight(c_long);
+
+impl FontWeight {
+    // pub const DONTCARE: FontWeight = FontWeight(wingdi::FW_DONTCARE);  //zero, use FontWeight::default()
+    pub const THIN: FontWeight = FontWeight(wingdi::FW_THIN);
+    pub const EXTRA_LIGHT: FontWeight = FontWeight(wingdi::FW_EXTRALIGHT);
+    pub const LIGHT: FontWeight = FontWeight(wingdi::FW_LIGHT);
+    pub const NORMAL: FontWeight = FontWeight(wingdi::FW_NORMAL);
+    pub const MEDIUM: FontWeight = FontWeight(wingdi::FW_MEDIUM);
+    pub const SEMI_BOLD: FontWeight = FontWeight(wingdi::FW_SEMIBOLD);
+    pub const BOLD: FontWeight = FontWeight(wingdi::FW_BOLD);
+    pub const EXTRA_BOLD: FontWeight = FontWeight(wingdi::FW_EXTRABOLD);
+    pub const HEAVY: FontWeight = FontWeight(wingdi::FW_HEAVY);
+    // pub const ULTRA_LIGHT: FontWeight = FontWeight(wingdi::FW_ULTRALIGHT); // alias of EXTRALIGHT
+    // pub const REGULAR: FontWeight = FontWeight(wingdi::FW_REGULAR); // alias of NORMAL
+    // pub const DEMI_BOLD: FontWeight = FontWeight(wingdi::FW_DEMIBOLD); // alias of SEMIBOLD
+    // pub const ULTRA_BOLD: FontWeight = FontWeight(wingdi::FW_ULTRABOLD); // alias of EXTRABOLD
+    // pub const BLACK: FontWeight = FontWeight(wingdi::FW_BLACK); // alias of HEAVY
+}
+
+#[derive(Default)]
+pub struct FontItalic(BOOL);
+
+impl FontItalic {
+    // const NORMAL: FontItalic = FontItalic(FALSE); // zero, use FontItalic::default()
+    const ITALIC: FontItalic = FontItalic(TRUE);
+}
+
+pub struct FontCharset(BYTE);
+
+impl Default for FontCharset {
+    fn default() -> Self {
+        FontCharset(wingdi::DEFAULT_CHARSET as _)
+    }
+}
+
+impl FontCharset {
+    //pub const DEFAULT: FontCharset = FontCharset(wingdi::DEFAULT_CHARSET as _); // default, use FontCharset::default()
+    pub const ANSI: FontCharset = FontCharset(wingdi::ANSI_CHARSET as _);
+    pub const OEM: FontCharset = FontCharset(wingdi::OEM_CHARSET as _);
+    pub const MAC: FontCharset = FontCharset(wingdi::MAC_CHARSET as _);
+    pub const SYMBOL: FontCharset = FontCharset(wingdi::SYMBOL_CHARSET as _);
+    pub const SHIFT_JIS: FontCharset = FontCharset(wingdi::SHIFTJIS_CHARSET as _);
+    // pub const HANGEUL: FontCharset = FontCharset(wingdi::HANGEUL_CHARSET as _); // alias, use HANGUL instead.
+    pub const HANGUL: FontCharset = FontCharset(wingdi::HANGUL_CHARSET as _);
+    pub const GB2312: FontCharset = FontCharset(wingdi::GB2312_CHARSET as _);
+    pub const CHINESE_BIG5: FontCharset = FontCharset(wingdi::CHINESEBIG5_CHARSET as _);
+    pub const JOHAB: FontCharset = FontCharset(wingdi::JOHAB_CHARSET as _);
+    pub const HEBREW: FontCharset = FontCharset(wingdi::HEBREW_CHARSET as _);
+    pub const ARABIC: FontCharset = FontCharset(wingdi::ARABIC_CHARSET as _);
+    pub const GREEK: FontCharset = FontCharset(wingdi::GREEK_CHARSET as _);
+    pub const TURKISH: FontCharset = FontCharset(wingdi::TURKISH_CHARSET as _);
+    pub const VIETNAMESE: FontCharset = FontCharset(wingdi::VIETNAMESE_CHARSET as _);
+    pub const THAI: FontCharset = FontCharset(wingdi::THAI_CHARSET as _);
+    pub const EAST_EUROPE: FontCharset = FontCharset(wingdi::EASTEUROPE_CHARSET as _);
+    pub const RUSSIAN: FontCharset = FontCharset(wingdi::RUSSIAN_CHARSET as _);
+    pub const BALTIC: FontCharset = FontCharset(wingdi::BALTIC_CHARSET as _);
+}
+
+
 pub mod dialog {
-    use crate::{CowStr, ExtraInfo, Id, IdOrName, OptionLangSpecific};
+    use crate::{CowStr, ExtraInfo, Id, IdOrName};
+    use crate::{OptionLangSpecific, VecLangSpecific};
+    use crate::MultiLangText;
+    use crate::Rect;
+    use crate::{Font, FontWeight, FontSize, FontItalic, FontCharset};
     use winapi::ctypes::c_int;
-    use winapi::ctypes::c_long;
-    use winapi::shared::minwindef::TRUE;
-    use winapi::shared::minwindef::{BOOL, BYTE, DWORD};
-    use winapi::um::wingdi;
+    use winapi::shared::minwindef::{DWORD};
+    use winapi::um::winuser;
 
-    pub struct Rect {
-        x: c_int,
-        y: c_int,
-        width: c_int,
-        height: c_int,
+
+    #[derive(Clone, Copy, Default)]
+    pub struct WindowStyle(pub(crate) Option<DWORD>, pub(crate) Option<DWORD>);
+
+    impl WindowStyle {
+        pub const OVERLAPPED: WindowStyle = WindowStyle(Some(winuser::WS_OVERLAPPED), None);
+        pub const POPUP: WindowStyle = WindowStyle(Some(winuser::WS_POPUP), None);
+        pub const CHILD: WindowStyle = WindowStyle(Some(winuser::WS_CHILD), None);
+        pub const MINIMIZE: WindowStyle = WindowStyle(Some(winuser::WS_MINIMIZE), None);
+        pub const VISIBLE: WindowStyle = WindowStyle(Some(winuser::WS_VISIBLE), None);
+        pub const DISABLED: WindowStyle = WindowStyle(Some(winuser::WS_DISABLED), None);
+        pub const CLIP_SIBLINGS: WindowStyle = WindowStyle(Some(winuser::WS_CLIPSIBLINGS), None);
+        pub const CLIP_CHILDREN: WindowStyle = WindowStyle(Some(winuser::WS_CLIPCHILDREN), None);
+        pub const MAXIMIZE: WindowStyle = WindowStyle(Some(winuser::WS_MAXIMIZE), None);
+        pub const CAPTION: WindowStyle = WindowStyle(Some(winuser::WS_CAPTION), None);
+        pub const BORDER: WindowStyle = WindowStyle(Some(winuser::WS_BORDER), None);
+        pub const DIALOG_FRAME: WindowStyle = WindowStyle(Some(winuser::WS_DLGFRAME), None);
+        pub const VERTICAL_SCROLLBAR: WindowStyle = WindowStyle(Some(winuser::WS_VSCROLL), None);
+        pub const HORIZONTAL_SCROLLBAR: WindowStyle = WindowStyle(Some(winuser::WS_HSCROLL), None);
+        pub const SYSTEM_MENU: WindowStyle = WindowStyle(Some(winuser::WS_SYSMENU), None);
+        pub const THICK_FRAME: WindowStyle = WindowStyle(Some(winuser::WS_THICKFRAME), None);
+        pub const GROUP: WindowStyle = WindowStyle(Some(winuser::WS_GROUP), None);
+        pub const TAB_STOP: WindowStyle = WindowStyle(Some(winuser::WS_TABSTOP), None);
+        pub const MINIMIZE_BOX: WindowStyle = WindowStyle(Some(winuser::WS_MINIMIZEBOX), None);
+        pub const MAXIMIZE_BOX: WindowStyle = WindowStyle(Some(winuser::WS_MAXIMIZEBOX), None);
+
+        pub const DIALOG_MODAL_FRAME: WindowStyle = WindowStyle(None, Some(winuser::WS_EX_DLGMODALFRAME));
+        pub const NO_PARENT_NOTIFY: WindowStyle = WindowStyle(None, Some(winuser::WS_EX_NOPARENTNOTIFY));
+        pub const TOP_MOST: WindowStyle = WindowStyle(None, Some(winuser::WS_EX_TOPMOST));
+        pub const ACCEPT_FILES: WindowStyle = WindowStyle(None, Some(winuser::WS_EX_ACCEPTFILES));
+        pub const TRANSPARENT: WindowStyle = WindowStyle(None, Some(winuser::WS_EX_TRANSPARENT));
+        pub const MDI_CHILD: WindowStyle = WindowStyle(None, Some(winuser::WS_EX_MDICHILD));
+        pub const TOOL_WINDOW: WindowStyle = WindowStyle(None, Some(winuser::WS_EX_TOOLWINDOW));
+        pub const WINDOW_EDGE: WindowStyle = WindowStyle(None, Some(winuser::WS_EX_WINDOWEDGE));
+        pub const CLIENT_EDGE: WindowStyle = WindowStyle(None, Some(winuser::WS_EX_CLIENTEDGE));
+        pub const CONTEXT_HELP: WindowStyle = WindowStyle(None, Some(winuser::WS_EX_CONTEXTHELP));
+        pub const RIGHT: WindowStyle = WindowStyle(None, Some(winuser::WS_EX_RIGHT));
+        pub const LEFT: WindowStyle = WindowStyle(None, Some(winuser::WS_EX_LEFT));
+        pub const RTL_READING: WindowStyle = WindowStyle(None, Some(winuser::WS_EX_RTLREADING));
+        pub const LTR_READING: WindowStyle = WindowStyle(None, Some(winuser::WS_EX_LTRREADING));
+        pub const LEFT_SCROLLBAR: WindowStyle = WindowStyle(None, Some(winuser::WS_EX_LEFTSCROLLBAR));
+        pub const RIGHT_SCROLLBAR: WindowStyle = WindowStyle(None, Some(winuser::WS_EX_RIGHTSCROLLBAR));
+        pub const CONTROL_PARENT: WindowStyle = WindowStyle(None, Some(winuser::WS_EX_CONTROLPARENT));
+        pub const STATIC_EDGE: WindowStyle = WindowStyle(None, Some(winuser::WS_EX_STATICEDGE));
+        pub const APP_WINDOW: WindowStyle = WindowStyle(None, Some(winuser::WS_EX_APPWINDOW));
+        pub const LAYERED: WindowStyle = WindowStyle(None, Some(winuser::WS_EX_LAYERED));
+        pub const NO_INHERIT_LAYOUT: WindowStyle = WindowStyle(None, Some(winuser::WS_EX_NOINHERITLAYOUT));
+        pub const NO_REDIRECTION_BITMAP: WindowStyle = WindowStyle(None, Some(winuser::WS_EX_NOREDIRECTIONBITMAP));
+        pub const LAYOUT_RTL: WindowStyle = WindowStyle(None, Some(winuser::WS_EX_LAYOUTRTL));
+        pub const COMPOSITED: WindowStyle = WindowStyle(None, Some(winuser::WS_EX_COMPOSITED));
+        pub const NO_ACTIVATE: WindowStyle = WindowStyle(None, Some(winuser::WS_EX_NOACTIVATE));
+
+        pub const COMBINATION_OVERLAPPED_WINDOW: WindowStyle = WindowStyle(
+            Some(winuser::WS_OVERLAPPED | winuser::WS_CAPTION | winuser::WS_SYSMENU | winuser::WS_THICKFRAME | winuser::WS_MINIMIZEBOX | winuser::WS_MAXIMIZEBOX),
+            Some(winuser::WS_EX_WINDOWEDGE | winuser::WS_EX_CLIENTEDGE));
+
+        pub const COMBINATION_POPUP_WINDOW: WindowStyle = WindowStyle(
+            Some(winuser::WS_POPUP | winuser::WS_BORDER | winuser::WS_SYSMENU), None);
+
+        pub const COMBINATION_CHILD_WINDOW: WindowStyle = WindowStyle(
+            Some(winuser::WS_CHILD), None);
+        
+        pub const COMBINATION_PALETTE_WINDOW: WindowStyle = WindowStyle(
+            None, Some(winuser::WS_EX_WINDOWEDGE | winuser::WS_EX_TOOLWINDOW | winuser::WS_EX_TOPMOST));
+
+        // pub const TILED: WindowStyle = WindowStyle::OVERLAPPED; //Alias - Use the corresponding constant instead.
+        // pub const ICONIC: WindowStyle = WindowStyle::MINIMIZE; //Alias - Use the corresponding constant instead.
+        // pub const SIZEBOX: WindowStyle = WindowStyle::THICKFRAME; //Alias - Use the corresponding constant instead.
+
+        // pub const COMBINATION_TILEDWINDOW: WindowStyle = WindowStyle::COMBINATION_OVERLAPPED_WINDOW; //Alias - Use the corresponding constant instead.
+
     }
 
-    pub struct Font {
-        pointsize: c_int,
-        typeface: CowStr,
-        weight: FontWeight,
-        italic: FontItalic,
-        charset: FontCharset,
-    }
-
-    #[derive(Default)]
-    pub struct FontWeight(c_long);
-
-    impl FontWeight {
-        // pub const DONTCARE: FontWeight = FontWeight(wingdi::FW_DONTCARE);  //zero, use FontWeight::default()
-        pub const THIN: FontWeight = FontWeight(wingdi::FW_THIN);
-        pub const EXTRALIGHT: FontWeight = FontWeight(wingdi::FW_EXTRALIGHT);
-        pub const LIGHT: FontWeight = FontWeight(wingdi::FW_LIGHT);
-        pub const NORMAL: FontWeight = FontWeight(wingdi::FW_NORMAL);
-        pub const MEDIUM: FontWeight = FontWeight(wingdi::FW_MEDIUM);
-        pub const SEMIBOLD: FontWeight = FontWeight(wingdi::FW_SEMIBOLD);
-        pub const BOLD: FontWeight = FontWeight(wingdi::FW_BOLD);
-        pub const EXTRABOLD: FontWeight = FontWeight(wingdi::FW_EXTRABOLD);
-        pub const HEAVY: FontWeight = FontWeight(wingdi::FW_HEAVY);
-        // pub const ULTRALIGHT: FontWeight = FontWeight(wingdi::FW_ULTRALIGHT); // alias of EXTRALIGHT
-        // pub const REGULAR: FontWeight = FontWeight(wingdi::FW_REGULAR); // alias of NORMAL
-        // pub const DEMIBOLD: FontWeight = FontWeight(wingdi::FW_DEMIBOLD); // alias of SEMIBOLD
-        // pub const ULTRABOLD: FontWeight = FontWeight(wingdi::FW_ULTRABOLD); // alias of EXTRABOLD
-        // pub const BLACK: FontWeight = FontWeight(wingdi::FW_BLACK); // alias of HEAVY
-    }
-
-    #[derive(Default)]
-    pub struct FontItalic(BOOL);
-
-    impl FontItalic {
-        // const NORMAL: FontItalic = FontItalic(FALSE); // zero, use FontItalic::default()
-        const ITALIC: FontItalic = FontItalic(TRUE);
-    }
-
-    pub struct FontCharset(BYTE);
-
-    impl Default for FontCharset {
-        fn default() -> Self {
-            FontCharset(wingdi::DEFAULT_CHARSET as _)
+    fn option_dword_bitor(a: Option<DWORD>, b: Option<DWORD>) -> Option<DWORD> {
+        match (a, b) {
+            (Some(a), Some(b)) => Some(a | b),
+            (Some(a), None) => Some(a),
+            (None, Some(b)) => Some(b),
+            (None, None) => None,
         }
     }
 
-    impl FontCharset {
-        //pub const DEFAULT: FontCharset = FontCharset(wingdi::DEFAULT_CHARSET as _); // default, use FontCharset::default()
-        pub const ANSI: FontCharset = FontCharset(wingdi::ANSI_CHARSET as _);
-        pub const OEM: FontCharset = FontCharset(wingdi::OEM_CHARSET as _);
-        pub const MAC: FontCharset = FontCharset(wingdi::MAC_CHARSET as _);
-        pub const SYMBOL: FontCharset = FontCharset(wingdi::SYMBOL_CHARSET as _);
-        pub const SHIFTJIS: FontCharset = FontCharset(wingdi::SHIFTJIS_CHARSET as _);
-        pub const HANGEUL: FontCharset = FontCharset(wingdi::HANGEUL_CHARSET as _);
-        pub const HANGUL: FontCharset = FontCharset(wingdi::HANGUL_CHARSET as _);
-        pub const GB2312: FontCharset = FontCharset(wingdi::GB2312_CHARSET as _);
-        pub const CHINESEBIG5: FontCharset = FontCharset(wingdi::CHINESEBIG5_CHARSET as _);
-        pub const JOHAB: FontCharset = FontCharset(wingdi::JOHAB_CHARSET as _);
-        pub const HEBREW: FontCharset = FontCharset(wingdi::HEBREW_CHARSET as _);
-        pub const ARABIC: FontCharset = FontCharset(wingdi::ARABIC_CHARSET as _);
-        pub const GREEK: FontCharset = FontCharset(wingdi::GREEK_CHARSET as _);
-        pub const TURKISH: FontCharset = FontCharset(wingdi::TURKISH_CHARSET as _);
-        pub const VIETNAMESE: FontCharset = FontCharset(wingdi::VIETNAMESE_CHARSET as _);
-        pub const THAI: FontCharset = FontCharset(wingdi::THAI_CHARSET as _);
-        pub const EASTEUROPE: FontCharset = FontCharset(wingdi::EASTEUROPE_CHARSET as _);
-        pub const RUSSIAN: FontCharset = FontCharset(wingdi::RUSSIAN_CHARSET as _);
-        pub const BALTIC: FontCharset = FontCharset(wingdi::BALTIC_CHARSET as _);
+    impl std::ops::BitOr for WindowStyle {
+        type Output = Self;
+
+        fn bitor(self, rhs: Self) -> Self {
+            WindowStyle(
+                option_dword_bitor(self.0, rhs.0),
+                option_dword_bitor(self.1, rhs.1)
+            )
+        }
     }
 
-    struct DialogControlStyle(Option<DWORD>, Option<DWORD>);
+    impl std::ops::BitOrAssign for WindowStyle {
+        fn bitor_assign(&mut self, rhs: Self) {
+            *self = *self | rhs;
+        }
+    }
 
-    pub struct DialogControl {
-        template: ControlTemplate,
-        id: Id,
-        text: OptionLangSpecific<CowStr>,
-        rect: Rect,
+
+    #[derive(Clone, Copy, Default)]
+    pub struct DialogStyle(WindowStyle);
+
+    impl DialogStyle {
+        pub const ABSOLUTE_ALIGN: DialogStyle = DialogStyle(WindowStyle(Some(winuser::DS_ABSALIGN), None));
+        pub const SET_FONT: DialogStyle = DialogStyle(WindowStyle(Some(winuser::DS_SETFONT), None));
+        pub const MODAL_FRAME: DialogStyle = DialogStyle(WindowStyle(Some(winuser::DS_MODALFRAME), None));
+        pub const NO_IDLE_MSG: DialogStyle = DialogStyle(WindowStyle(Some(winuser::DS_NOIDLEMSG), None));
+        pub const SET_FOREGROUND: DialogStyle = DialogStyle(WindowStyle(Some(winuser::DS_SETFOREGROUND), None));
+        pub const FIXED_SYS: DialogStyle = DialogStyle(WindowStyle(Some(winuser::DS_FIXEDSYS), None));
+        pub const NO_FAIL_CREATE: DialogStyle = DialogStyle(WindowStyle(Some(winuser::DS_NOFAILCREATE), None));
+        pub const CONTROL: DialogStyle = DialogStyle(WindowStyle(Some(winuser::DS_CONTROL), None));
+        pub const CENTER: DialogStyle = DialogStyle(WindowStyle(Some(winuser::DS_CENTER), None));
+        pub const CENTER_MOUSE: DialogStyle = DialogStyle(WindowStyle(Some(winuser::DS_CENTERMOUSE), None));
+        pub const CONTEXT_HELP: DialogStyle = DialogStyle(WindowStyle(Some(winuser::DS_CONTEXTHELP), None));
+        pub const SHELL_FONT: DialogStyle = DialogStyle(WindowStyle(Some(winuser::DS_SHELLFONT), None));
+        pub const USE_PIXELS: DialogStyle = DialogStyle(WindowStyle(Some(winuser::DS_USEPIXELS), None));
+        #[deprecated]
+        pub const SYSTEM_MODAL: DialogStyle = DialogStyle(WindowStyle(Some(winuser::DS_SYSMODAL), None));
+        #[deprecated]
+        pub const LOCALEDIT: DialogStyle = DialogStyle(WindowStyle(Some(winuser::DS_LOCALEDIT), None));
+        #[deprecated]
+        pub const THREE_DIM_LOOK: DialogStyle = DialogStyle(WindowStyle(Some(winuser::DS_3DLOOK), None));
+    }
+
+    impl From<WindowStyle> for DialogStyle {
+        fn from(v: WindowStyle) -> Self {
+            DialogStyle(v)
+        }
+    }
+
+    impl std::ops::BitOr for DialogStyle {
+        type Output = Self;
+
+        fn bitor(self, rhs: Self) -> Self {
+            DialogStyle(self.0 | rhs.0)
+        }
+    }
+
+    impl std::ops::BitOrAssign for DialogStyle {
+        fn bitor_assign(&mut self, rhs: Self) {
+            *self = *self | rhs;
+        }
+    }
+
+    #[derive(Clone, Copy, Default)]
+    pub struct ControlStyle(WindowStyle);
+
+    impl From<WindowStyle> for ControlStyle {
+        fn from(v: WindowStyle) -> Self {
+            ControlStyle(v)
+        }
+    }
+    
+    impl std::ops::BitOr for ControlStyle {
+        type Output = Self;
+
+        fn bitor(self, rhs: Self) -> Self {
+            ControlStyle(self.0 | rhs.0)
+        }
+    }
+
+    impl std::ops::BitOrAssign for ControlStyle {
+        fn bitor_assign(&mut self, rhs: Self) {
+            *self = *self | rhs;
+        }
+    }
+
+    #[derive(Clone, Copy)]
+    pub struct StaticControlStyle(ControlStyle);
+
+    pub struct StaticControlContentType(DWORD);
+    impl StaticControlContentType {
+        pub const LEFT: StaticControlContentType = StaticControlContentType(winuser::SS_LEFT);
+        pub const CENTER: StaticControlContentType = StaticControlContentType(winuser::SS_CENTER);
+        pub const RIGHT: StaticControlContentType = StaticControlContentType(winuser::SS_RIGHT);
+        pub const ICON: StaticControlContentType = StaticControlContentType(winuser::SS_ICON);
+        pub const BLACK_RECT: StaticControlContentType = StaticControlContentType(winuser::SS_BLACKRECT);
+        pub const GRAY_RECT: StaticControlContentType = StaticControlContentType(winuser::SS_GRAYRECT);
+        pub const WHITE_RECT: StaticControlContentType = StaticControlContentType(winuser::SS_WHITERECT);
+        pub const BLACK_FRAME: StaticControlContentType = StaticControlContentType(winuser::SS_BLACKFRAME);
+        pub const GRAY_FRAME: StaticControlContentType = StaticControlContentType(winuser::SS_GRAYFRAME);
+        pub const WHITE_FRAME: StaticControlContentType = StaticControlContentType(winuser::SS_WHITEFRAME);
+        pub const USER_ITEM: StaticControlContentType = StaticControlContentType(winuser::SS_USERITEM);
+        pub const SIMPLE: StaticControlContentType = StaticControlContentType(winuser::SS_SIMPLE);
+        pub const LEFT_NO_WORD_WRAP: StaticControlContentType = StaticControlContentType(winuser::SS_LEFTNOWORDWRAP);
+        pub const OWNER_DRAW: StaticControlContentType = StaticControlContentType(winuser::SS_OWNERDRAW);
+        pub const BITMAP: StaticControlContentType = StaticControlContentType(winuser::SS_BITMAP);
+        pub const ENH_META_FILE: StaticControlContentType = StaticControlContentType(winuser::SS_ENHMETAFILE);
+        pub const ETCHED_HORZ: StaticControlContentType = StaticControlContentType(winuser::SS_ETCHEDHORZ);
+        pub const ETCHED_VERT: StaticControlContentType = StaticControlContentType(winuser::SS_ETCHEDVERT);
+        pub const ETCHED_FRAME: StaticControlContentType = StaticControlContentType(winuser::SS_ETCHEDFRAME);
+        //pub const TYPEMASK: StaticControlContentType = StaticControlContentType(winuser::SS_TYPEMASK);
+    }
+
+    impl StaticControlStyle {
+        pub const REAL_SIZE_CONTROL: StaticControlStyle = StaticControlStyle(ControlStyle(WindowStyle(Some(winuser::SS_REALSIZECONTROL), None)));
+        pub const NO_PREFIX: StaticControlStyle = StaticControlStyle(ControlStyle(WindowStyle(Some(winuser::SS_NOPREFIX), None)));
+        pub const NOTIFY: StaticControlStyle = StaticControlStyle(ControlStyle(WindowStyle(Some(winuser::SS_NOTIFY), None)));
+        pub const CENTER_IMAGE: StaticControlStyle = StaticControlStyle(ControlStyle(WindowStyle(Some(winuser::SS_CENTERIMAGE), None)));
+        pub const RIGHT_JUST: StaticControlStyle = StaticControlStyle(ControlStyle(WindowStyle(Some(winuser::SS_RIGHTJUST), None)));
+        pub const REAL_SIZE_IMAGE: StaticControlStyle = StaticControlStyle(ControlStyle(WindowStyle(Some(winuser::SS_REALSIZEIMAGE), None)));
+        pub const SUNKEN: StaticControlStyle = StaticControlStyle(ControlStyle(WindowStyle(Some(winuser::SS_SUNKEN), None)));
+        pub const EDIT_CONTROL: StaticControlStyle = StaticControlStyle(ControlStyle(WindowStyle(Some(winuser::SS_EDITCONTROL), None)));
+        pub const END_ELLIPSIS: StaticControlStyle = StaticControlStyle(ControlStyle(WindowStyle(Some(winuser::SS_ENDELLIPSIS), None)));
+        pub const PATH_ELLIPSIS: StaticControlStyle = StaticControlStyle(ControlStyle(WindowStyle(Some(winuser::SS_PATHELLIPSIS), None)));
+        pub const WORD_ELLIPSIS: StaticControlStyle = StaticControlStyle(ControlStyle(WindowStyle(Some(winuser::SS_WORDELLIPSIS), None)));
+        //pub const ELLIPSISMASK: StaticControlStyle = StaticControlStyle(ControlStyle(WindowStyle(Some(winuser::SS_ELLIPSISMASK), None)));
+    }
+
+    impl From<WindowStyle> for StaticControlStyle {
+        fn from(v: WindowStyle) -> Self {
+            StaticControlStyle(ControlStyle(v))
+        }
+    }    
+
+    impl From<ControlStyle> for StaticControlStyle {
+        fn from(v: ControlStyle) -> Self {
+            StaticControlStyle(v)
+        }
+    }    
+
+    #[derive(Clone, Copy)]
+    pub struct ButtonControlStyle(ControlStyle);
+
+    impl From<WindowStyle> for ButtonControlStyle {
+        fn from(v: WindowStyle) -> Self {
+            ButtonControlStyle(ControlStyle(v))
+        }
+    }    
+
+    impl From<ControlStyle> for ButtonControlStyle {
+        fn from(v: ControlStyle) -> Self {
+            ButtonControlStyle(v)
+        }
+    }     
+
+    #[derive(Clone, Copy)]
+    pub struct EditControlStyle(ControlStyle);
+
+    impl From<WindowStyle> for EditControlStyle {
+        fn from(v: WindowStyle) -> Self {
+            EditControlStyle(ControlStyle(v))
+        }
+    }    
+
+    impl From<ControlStyle> for EditControlStyle {
+        fn from(v: ControlStyle) -> Self {
+            EditControlStyle(v)
+        }
+    }     
+
+    #[derive(Clone, Copy)]
+    pub struct ScrollBarControlStyle(ControlStyle);
+
+    impl From<WindowStyle> for ScrollBarControlStyle {
+        fn from(v: WindowStyle) -> Self {
+            ScrollBarControlStyle(ControlStyle(v))
+        }
+    }    
+
+    impl From<ControlStyle> for ScrollBarControlStyle {
+        fn from(v: ControlStyle) -> Self {
+            ScrollBarControlStyle(v)
+        }
+    }     
+
+    #[derive(Clone, Copy)]
+    pub struct ComboBoxControlStyle(ControlStyle);
+
+    impl From<WindowStyle> for ComboBoxControlStyle {
+        fn from(v: WindowStyle) -> Self {
+            ComboBoxControlStyle(ControlStyle(v))
+        }
+    }    
+
+    impl From<ControlStyle> for ComboBoxControlStyle {
+        fn from(v: ControlStyle) -> Self {
+            ComboBoxControlStyle(v)
+        }
+    }     
+
+    #[derive(Clone, Copy)]
+    pub struct ListBoxControlStyle(ControlStyle);
+
+    impl From<WindowStyle> for ListBoxControlStyle {
+        fn from(v: WindowStyle) -> Self {
+            ListBoxControlStyle(ControlStyle(v))
+        }
+    }    
+
+    impl From<ControlStyle> for ListBoxControlStyle {
+        fn from(v: ControlStyle) -> Self {
+            ListBoxControlStyle(v)
+        }
+    }     
+
+
+    enum IdOrLangSpecificStr {
+        LangSpecificStr(OptionLangSpecific<CowStr>),
+        Id(Option<Id>),
+    }
+
+    pub struct Control {
+        template: Option<ControlTemplate>,
+        text_or_image: Option<IdOrLangSpecificStr>,
+        rect: Option<Rect>,
         class: Option<CowStr>,
-        style: Option<DialogControlStyle>,
+        style: Option<ControlStyle>,
+    }
+
+    impl Control {
+        fn new(template: ControlTemplate) -> Self {
+            Control {
+                template: Some(template),
+                text_or_image: None,
+                rect: None,
+                class: None,
+                style: None,
+            }
+        }
     }
 
     pub struct ControlTemplate {
@@ -1315,124 +1696,245 @@ pub mod dialog {
         use_keyword: Option<&'static str>,
     }
 
-    impl ControlTemplate {
-        pub const CONTROL: ControlTemplate = ControlTemplate {
-            name: "CONTROL",
-            use_text: true,
-            use_size: true,
-            use_keyword: None,
+    pub trait ControlTrait {
+        fn into_control(self) -> Control where Self:Sized;
+    }
+
+    pub trait ControlTemplateTrait {
+        type ControlType: ControlTrait;
+
+        fn instantiate_control(self) -> Self::ControlType;
+    }
+
+    macro_rules! define_control_class {
+        ($control_template:ident, $control:ident) => {
+            pub struct $control_template(ControlTemplate);
+            impl ControlTemplateTrait for $control_template {
+                type ControlType = $control;
+
+                fn instantiate_control(self) -> $control {
+                    $control(Control::new(self.0))
+                }
+            }
+            pub struct $control(Control);
+            impl ControlTrait for $control {
+                fn into_control(self) -> Control {
+                    self.0
+                }
+            }
+            
         };
-        pub const AUTO3STATE: ControlTemplate = ControlTemplate {
+    }
+
+    impl StaticControl {
+        pub fn text(mut self, text: impl Into<MultiLangText>) -> Self {
+            self.0.text_or_image = Some(IdOrLangSpecificStr::LangSpecificStr(text.into().0));
+            self
+        }
+
+        pub fn image_id(mut self, id: impl Into<Id>) -> Self {
+            self.0.text_or_image = Some(IdOrLangSpecificStr::Id(Some(id.into())));
+            self
+        }
+
+        pub fn rect(mut self, rect: Rect) -> Self {
+            self.0.rect = Some(rect);
+            self
+        }
+
+        pub fn style(mut self, style: impl Into<StaticControlStyle>) -> Self {
+            *self.0.style.get_or_insert_with(Default::default) |= style.into().0;
+            self
+        }
+    }
+
+    impl ButtonControl {
+        pub fn text(mut self, text: impl Into<MultiLangText>) -> Self {
+            self.0.text_or_image = Some(IdOrLangSpecificStr::LangSpecificStr(text.into().0));
+            self
+        }
+
+        pub fn rect(mut self, rect: Rect) -> Self {
+            self.0.rect = Some(rect);
+            self
+        }
+
+        pub fn style(mut self, style: impl Into<ButtonControlStyle>) -> Self {
+            *self.0.style.get_or_insert_with(Default::default) |= style.into().0;
+            self
+        }
+    }
+
+    impl EditControl {
+        pub fn rect(mut self, rect: Rect) -> Self {
+            self.0.rect = Some(rect);
+            self
+        }
+
+        pub fn style(mut self, style: impl Into<EditControlStyle>) -> Self {
+            *self.0.style.get_or_insert_with(Default::default) |= style.into().0;
+            self
+        }
+    }
+
+    impl ScrollBarControl {
+        pub fn rect(mut self, rect: Rect) -> Self {
+            self.0.rect = Some(rect);
+            self
+        }
+
+        pub fn style(mut self, style: impl Into<ScrollBarControlStyle>) -> Self {
+            *self.0.style.get_or_insert_with(Default::default) |= style.into().0;
+            self
+        }
+    }
+
+    impl ComboBoxControl {
+        pub fn rect(mut self, rect: Rect) -> Self {
+            self.0.rect = Some(rect);
+            self
+        }
+        pub fn style(mut self, style: impl Into<ComboBoxControlStyle>) -> Self {
+            *self.0.style.get_or_insert_with(Default::default) |= style.into().0;
+            self
+        }
+    }
+
+    impl ListBoxControl {
+        pub fn rect(mut self, rect: Rect) -> Self {
+            self.0.rect = Some(rect);
+            self
+        }
+        pub fn style(mut self, style: impl Into<ListBoxControlStyle>) -> Self {
+            *self.0.style.get_or_insert_with(Default::default) |= style.into().0;
+            self
+        }
+    }    
+
+    define_control_class!(StaticControlTemplate, StaticControl);
+    define_control_class!(ButtonControlTemplate, ButtonControl);
+    define_control_class!(EditControlTemplate, EditControl);
+    define_control_class!(ScrollBarControlTemplate, ScrollBarControl);
+    define_control_class!(ComboBoxControlTemplate, ComboBoxControl);
+    define_control_class!(ListBoxControlTemplate, ListBoxControl);
+
+    impl ControlTemplate {
+        pub const AUTO3STATE: ButtonControlTemplate = ButtonControlTemplate(ControlTemplate {
             name: "AUTO3STATE",
             use_text: true,
             use_size: true,
             use_keyword: Some("BUTTON"),
-        };
-        pub const AUTOCHECKBOX: ControlTemplate = ControlTemplate {
+        });
+        pub const AUTOCHECKBOX: ButtonControlTemplate = ButtonControlTemplate(ControlTemplate {
             name: "AUTOCHECKBOX",
             use_text: true,
             use_size: true,
             use_keyword: Some("BUTTON"),
-        };
-        pub const AUTORADIOBUTTON: ControlTemplate = ControlTemplate {
+        });
+        pub const AUTORADIOBUTTON: ButtonControlTemplate = ButtonControlTemplate(ControlTemplate {
             name: "AUTORADIOBUTTON",
             use_text: true,
             use_size: true,
             use_keyword: Some("BUTTON"),
-        };
-        pub const CHECKBOX: ControlTemplate = ControlTemplate {
+        });
+        pub const CHECKBOX: ButtonControlTemplate = ButtonControlTemplate(ControlTemplate {
             name: "CHECKBOX",
             use_text: true,
             use_size: true,
             use_keyword: Some("BUTTON"),
-        };
-        pub const COMBOBOX: ControlTemplate = ControlTemplate {
+        });
+        pub const COMBOBOX: ComboBoxControlTemplate = ComboBoxControlTemplate(ControlTemplate {
             name: "COMBOBOX",
             use_text: false,
             use_size: true,
             use_keyword: Some("COMBOBOX"),
-        };
-        pub const CTEXT: ControlTemplate = ControlTemplate {
+        });
+        pub const CTEXT: StaticControlTemplate = StaticControlTemplate(ControlTemplate {
             name: "CTEXT",
             use_text: true,
             use_size: true,
             use_keyword: Some("STATIC"),
-        };
-        pub const DEFPUSHBUTTON: ControlTemplate = ControlTemplate {
+        });
+        pub const DEFPUSHBUTTON: ButtonControlTemplate = ButtonControlTemplate(ControlTemplate {
             name: "DEFPUSHBUTTON",
             use_text: true,
             use_size: true,
             use_keyword: Some("BUTTON"),
-        };
-        pub const EDITTEXT: ControlTemplate = ControlTemplate {
+        });
+        pub const EDITTEXT: EditControlTemplate = EditControlTemplate(ControlTemplate {
             name: "EDITTEXT",
             use_text: true,
             use_size: true,
             use_keyword: Some("EDIT"),
-        };
-        pub const GROUPBOX: ControlTemplate = ControlTemplate {
+        });
+        pub const GROUPBOX: ButtonControlTemplate = ButtonControlTemplate(ControlTemplate {
             name: "GROUPBOX",
             use_text: true,
             use_size: true,
             use_keyword: Some("BUTTON"),
-        };
-        pub const ICON: ControlTemplate = ControlTemplate {
+        });
+        pub const ICON: StaticControlTemplate = StaticControlTemplate(ControlTemplate {
             name: "ICON",
             use_text: true,
             use_size: false,
             use_keyword: Some("STATIC"),
-        };
-        pub const LISTBOX: ControlTemplate = ControlTemplate {
+        });
+        pub const LISTBOX: ListBoxControlTemplate = ListBoxControlTemplate(ControlTemplate {
             name: "LISTBOX",
             use_text: false,
             use_size: true,
             use_keyword: Some("LISTBOX"),
-        };
-        pub const LTEXT: ControlTemplate = ControlTemplate {
+        });
+        pub const LTEXT: StaticControlTemplate = StaticControlTemplate(ControlTemplate {
             name: "LTEXT",
             use_text: true,
             use_size: true,
             use_keyword: Some("STATIC"),
-        };
-        pub const PUSHBOX: ControlTemplate = ControlTemplate {
+        });
+        pub const PUSHBOX: ButtonControlTemplate = ButtonControlTemplate(ControlTemplate {
             name: "PUSHBOX",
             use_text: true,
             use_size: true,
             use_keyword: Some("BUTTON"),
-        };
-        pub const PUSHBUTTON: ControlTemplate = ControlTemplate {
+        });
+        pub const PUSHBUTTON: ButtonControlTemplate = ButtonControlTemplate(ControlTemplate {
             name: "PUSHBUTTON",
             use_text: true,
             use_size: true,
             use_keyword: Some("BUTTON"),
-        };
-        pub const RADIOBUTTON: ControlTemplate = ControlTemplate {
+        });
+        pub const RADIOBUTTON: ButtonControlTemplate = ButtonControlTemplate(ControlTemplate {
             name: "RADIOBUTTON",
             use_text: true,
             use_size: true,
             use_keyword: Some("BUTTON"),
-        };
-        pub const RTEXT: ControlTemplate = ControlTemplate {
+        });
+        pub const RTEXT: StaticControlTemplate = StaticControlTemplate(ControlTemplate {
             name: "RTEXT",
             use_text: true,
             use_size: true,
             use_keyword: Some("STATIC"),
-        };
-        pub const SCROLLBAR: ControlTemplate = ControlTemplate {
+        });
+        pub const SCROLLBAR: ScrollBarControlTemplate = ScrollBarControlTemplate(ControlTemplate {
             name: "SCROLLBAR",
             use_text: true,
             use_size: true,
             use_keyword: Some("SCROLLBAR"),
-        };
-        pub const STATE3: ControlTemplate = ControlTemplate {
+        });
+        pub const STATE3: ButtonControlTemplate = ButtonControlTemplate(ControlTemplate {
             name: "STATE3",
             use_text: true,
             use_size: true,
             use_keyword: Some("BUTTON"),
-        };
+        });
     }
 
-    pub struct DialogStyle(DWORD, DWORD);
+    impl Control {
+        pub fn from_template<T:ControlTemplateTrait>(template: T) -> T::ControlType {
+            template.instantiate_control()
+        }
+    }
+
 
     #[derive(Default)]
     pub(crate) struct DialogData {
@@ -1442,9 +1944,9 @@ pub mod dialog {
         caption: OptionLangSpecific<CowStr>,
         class: Option<IdOrName>,
         style: Option<DialogStyle>,
-        font: Option<Font>,
+        font: OptionLangSpecific<Font>,
         menu: Option<IdOrName>,
-        controls: Vec<DialogControl>,
+        controls: VecLangSpecific<(Id, Control)>,
     }
 
     pub struct DialogBuilder(DialogData);
@@ -1452,7 +1954,151 @@ pub mod dialog {
     builder_implement_priv_default!(DialogBuilder);
     builder_build_method!(DialogBuilder, crate::resource::Dialog);
 
-    unimplemented_resouce_data_write_segment!(DialogData);
+    impl DialogBuilder {
+        pub fn system_menu(self) -> Self {
+            self.style(WindowStyle::SYSTEM_MENU)
+        }
+
+        pub fn caption(mut self, caption_text: MultiLangText) -> Self {
+            self.0.caption = caption_text.0;
+            self.style(WindowStyle::CAPTION)
+        }
+
+        pub fn style(mut self, style: impl Into<DialogStyle>) -> Self {
+            let style = style.into();
+            *self.0.style.get_or_insert_with(Default::default) |= style;
+            self
+        }
+
+        pub fn font(mut self, typeface: impl Into<CowStr>, size: FontSize, 
+            weight: FontWeight, italic: FontItalic, charset: FontCharset) -> Self {
+            self.0.font.insert_universal(Font {
+                typeface: typeface.into(),
+                size,
+                weight,
+                italic,
+                charset
+            });
+            self
+        }
+
+        pub fn lang_specific_font(mut self, lang: crate::Lang, typeface: impl Into<CowStr>, size: FontSize, 
+            weight: FontWeight, italic: FontItalic, charset: FontCharset) -> Self {
+            self.0.font.insert_lang_specific(lang, Font {
+                typeface: typeface.into(),
+                size,
+                weight,
+                italic,
+                charset
+            });
+            self
+        }
+
+        pub fn control(mut self, id: impl Into<Id>, control: impl ControlTrait) -> Self {
+            self.0.controls.push_universal((id.into(), control.into_control()));
+            self
+        }
+
+        pub fn lang_specific_control(mut self, lang: crate::Lang, id: impl Into<Id>, control: impl ControlTrait) -> Self {
+            self.0.controls.push_lang_specific(lang, (id.into(), control.into_control()));
+            self
+        }
+    }
+
+    impl DialogData {
+        pub(crate) fn is_missing_for_lang(&self, _l: crate::Lang) -> bool {
+            false
+        }
+
+        pub(crate) fn write_resource_header_extras(&self, w: &mut dyn std::io::Write, lang: crate::Lang) -> Result<(), std::io::Error> {
+            let mut rect = self.rect.get(lang).cloned();
+            let rect = rect.get_or_insert_with(Default::default);
+            write!(w, " ")?;
+            crate::codegen::write_rect(w, rect)?;
+            if let Some(&help_id) = self.help_id.get(lang) {
+                write!(w, ", ")?;
+                crate::codegen::write_c_int(w, help_id)?;
+            }
+            crate::codegen::write_extra_info(w, self.extra_info.get(lang))?;
+            if let Some(caption) = self.caption.get(lang) {
+                write!(w, "\nCAPTION ")?;
+                crate::codegen::write_narrow_str(w, caption)?;
+            }
+            if let Some(class) = self.class.as_ref() {
+                write!(w, "\nCLASS ")?;
+                crate::codegen::write_id_or_name(w, class)?;
+            }
+            if let Some(font) = self.font.get(lang) {
+                write!(w, "\nFONT ")?;
+                crate::codegen::write_font(w, font)?;
+            }
+            if let Some(menu) = self.menu.as_ref() {
+                write!(w, "\nMENU ")?;
+                crate::codegen::write_id_or_name(w, menu)?;
+            }
+            if let Some(style) = self.style.as_ref() {
+                crate::codegen::write_style_and_exstyle_statements(w, style.0)?;
+            }
+            Ok(())
+        }
+
+        pub(crate) fn write_resource_segment(&self, w: &mut dyn std::io::Write, lang: crate::Lang) -> Result<(), std::io::Error> {
+            write!(w, "{{\n")?;
+            let default_template = ControlTemplate {
+                name: "CONTROL",
+                use_text: true,
+                use_size: true,
+                use_keyword: None,
+            };
+            for (id, control) in self.controls.iter(lang) {
+                let template = control.template.as_ref().unwrap_or(&default_template);
+                write!(w, "\t{} ", template.name)?;
+                if template.use_text {
+                    match &control.text_or_image {
+                        Some(crate::dialog::IdOrLangSpecificStr::Id(text_or_image_id)) => {
+                            let text_or_image_id = text_or_image_id.as_ref().unwrap_or(&crate::predefined_id::DEFAULT);
+                            crate::codegen::write_id(w, text_or_image_id)?;
+                        },
+                        _ => {
+                            let text = if let Some(crate::dialog::IdOrLangSpecificStr::LangSpecificStr(lang_specific_str)) = &control.text_or_image {
+                                lang_specific_str.get(lang)
+                            } else {
+                                None
+                            };
+                            crate::codegen::write_mandatory_narrow_str(w, text)?;
+                        }
+                    }
+                    write!(w, ", ")?;
+                }
+                crate::codegen::write_id(w, id)?;
+                let style = control.style.clone().unwrap_or_default().0;
+                if template.use_keyword.is_none() {
+                    write!(w, ", ")?;
+                    crate::codegen::write_mandatory_narrow_str(w, control.class.as_ref())?;
+                    write!(w, ", ")?;
+                    crate::codegen::write_mandatory_dword(w, style.0.as_ref())?;
+                }
+                write!(w, ", ")?;
+                crate::codegen::write_mandatory_rect(w, control.rect.as_ref())?;
+                if template.use_keyword.is_some() {
+                    let anything_left_to_output = style.1.is_some();
+                    if style.0.is_some() || anything_left_to_output {
+                        write!(w, ", ")?;
+                    }
+                    if let Some(basic_style) = style.0.as_ref() {
+                        crate::codegen::write_dword(w, *basic_style)?;
+                    }
+                }
+                if let Some(extend_style) = style.1.as_ref() {
+                    write!(w, ", ")?;
+                    crate::codegen::write_dword(w, *extend_style)?;
+                }
+                write!(w, "\n")?;
+            }
+            write!(w, "}}\n")?;
+            Ok(())
+        }
+    }
 }
 
 pub mod version_info {
@@ -1591,20 +2237,68 @@ mod codegen {
         )?;
         write!(w, "// Do not edit this file manually.\n")?;
         write!(w, "\n")?;
-        write!(w, "#pragma codepage(65001)\n")?;
+        write!(w, "#pragma code_page(65001)\n")?;
         Ok(())
     }
 
-    pub(crate) fn write_c_int(w: &mut dyn Write, c_int: winapi::ctypes::c_int) -> Result<(), IOError> {
-        if std::mem::size_of_val(&c_int) > 2 {
-            write!(w, "{}L", c_int)
+    pub(crate) fn write_c_numeric(w: &mut dyn Write, c_numeric: impl std::fmt::Display) -> Result<(), IOError> {
+        if std::mem::size_of_val(&c_numeric) > 2 {
+            write!(w, "{}L", c_numeric)
         } else {
-            write!(w, "{}", c_int)
+            write!(w, "{}", c_numeric)
         }
+    }
+
+    pub(crate) fn write_c_uchar(w: &mut dyn Write, c_uchar: winapi::ctypes::c_uchar) -> Result<(), IOError> {
+        write_c_numeric(w, c_uchar)
+    }
+
+    pub(crate) fn write_c_int(w: &mut dyn Write, c_int: winapi::ctypes::c_int) -> Result<(), IOError> {
+        write_c_numeric(w, c_int)
+    }
+
+    pub(crate) fn write_c_long(w: &mut dyn Write, c_long: winapi::ctypes::c_long) -> Result<(), IOError> {
+        write_c_numeric(w, c_long)
     }
 
     pub(crate) fn write_dword(w: &mut dyn Write, dword: winapi::shared::minwindef::DWORD) -> Result<(), IOError> {
         write!(w, "{}L", dword)
+    }
+
+    pub(crate) fn write_mandatory_dword(w: &mut dyn Write, dword: Option<&winapi::shared::minwindef::DWORD>) -> Result<(), IOError> {
+        write_dword(w, dword.cloned().unwrap())
+    }
+
+    pub(crate) fn write_rect(w: &mut dyn Write, rect: &crate::Rect) -> Result<(), IOError> {
+        write_c_int(w, rect.x)?;
+        write!(w, ", ")?;
+        write_c_int(w, rect.y)?;
+        write!(w, ", ")?;
+        write_c_int(w, rect.width)?;
+        write!(w, ", ")?;
+        write_c_int(w, rect.height)?;
+        Ok(())
+    }
+
+    pub(crate) fn write_mandatory_rect(w: &mut dyn Write, rect: Option<&crate::Rect>) -> Result<(), IOError> {
+        if let Some(rect) = rect {
+            write_rect(w, rect)
+        } else {
+            write_rect(w, &crate::Rect::default())
+        }
+    }
+
+    pub(crate) fn write_font(w: &mut dyn Write, font: &crate::Font) -> Result<(), IOError> {
+        write_c_int(w, font.size.0)?;
+        write!(w, ", ")?;
+        write_narrow_str(w, &font.typeface)?;
+        write!(w, ", ")?;
+        write_c_long(w, font.weight.0)?;
+        write!(w, ", ")?;
+        write_c_int(w, font.italic.0)?;
+        write!(w, ", ")?;
+        write_c_uchar(w, font.charset.0)?;
+        Ok(())
     }
 
     pub(crate) fn need_escape_narrow_byte(v: &u8) -> bool {
@@ -1625,6 +2319,14 @@ mod codegen {
             127u16 => true,
             32u16..=126u16 => false,
             _ => true,
+        }
+    }
+
+    pub(crate) fn write_mandatory_narrow_str(w: &mut dyn Write, string: Option<&CowStr>) -> Result<(), IOError> {
+        if let Some(string) = string {
+            write_narrow_str(w, string)
+        } else {
+            write_narrow_str(w, &CowStr::from(""))
         }
     }
 
@@ -1663,7 +2365,11 @@ mod codegen {
         Ok(())
     }
 
-    fn write_id_or_name(w: &mut dyn Write, id_or_name: &IdOrName) -> Result<(), IOError> {
+    pub(crate) fn write_id(w: &mut dyn Write, id: &Id) -> Result<(), IOError> {
+        write!(w, "{}", id.0)
+    }
+
+    pub(crate) fn write_id_or_name(w: &mut dyn Write, id_or_name: &IdOrName) -> Result<(), IOError> {
         match id_or_name {
             IdOrName::Id(id) => write!(w, "{}", id),
             IdOrName::Name(name) => write_narrow_str(w, name),
@@ -1693,7 +2399,7 @@ mod codegen {
 
     pub(crate) fn write_extra_info(
         w: &mut dyn Write,
-        extra_info: &Option<crate::ExtraInfo>
+        extra_info: Option<&crate::ExtraInfo>
     ) -> Result<(), IOError> {
         if let Some(extra_info) = extra_info {
             if let Some(characteristics) = &extra_info.characteristics {
@@ -1705,6 +2411,30 @@ mod codegen {
                 write_dword(w, *version)?;
             }
         }
+        Ok(())
+    }
+
+    pub(crate) fn write_style_and_exstyle_statements(
+        w: &mut dyn Write,
+        style: crate::dialog::WindowStyle
+    ) -> Result<(), IOError> {
+        match (style.0.as_ref(), style.1.as_ref()) {
+            (None, None) => {},
+            (Some(basic), None) => {
+                write!(w, "\nSTYLE ")?;
+                write_dword(w, *basic)?;
+            },
+            (None, Some(extended)) => {
+                write!(w, "\nEXSTYLE ")?;
+                write_dword(w, *extended)?;
+            },
+            (Some(basic), Some(extended)) => {
+                write!(w, "\nSTYLE ")?;
+                write_dword(w, *basic)?;
+                write!(w, " EXSTYLE ")?;
+                write_dword(w, *extended)?;
+            },
+        };
         Ok(())
     }
 
