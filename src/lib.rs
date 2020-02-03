@@ -2364,7 +2364,11 @@ mod codegen {
         use std::os::windows::ffi::OsStrExt;
         write!(w, "L\"")?;
         for ch in name.encode_wide() {
-            if !need_escape_wide_u16(&ch) {
+            if ch == b'\\' as _ {
+                // for compatiblity with WINDRES.EXE, which doesn't seem
+                // supporting 4 byte escaped character at all.
+                write!(w, "\\\\")?;
+            } else if !need_escape_wide_u16(&ch) {
                 debug_assert!(ch <= std::u8::MAX as _);
                 let ch: [u8; 1] = [ch as u8];
                 w.write_all(&ch)?;
