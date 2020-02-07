@@ -2483,9 +2483,10 @@ mod codegen {
     ) -> Result<(), IOError> {
         write_resource_header(w, lang, id_or_name, res_type_keyword)?;
         write!(w, " ")?;
-        let mut absolute_path = std::env::current_dir()?;
-        absolute_path.push(path);
-        write_path(w, &absolute_path)?;
+        // let mut absolute_path = std::env::current_dir()?;
+        // absolute_path.push(path);
+        // write_path(w, &absolute_path)?;
+        write_path(w, path)?;
         write!(w, "\n")?;
         Ok(())
     }
