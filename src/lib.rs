@@ -2380,6 +2380,27 @@ mod codegen {
         Ok(())
     }
 
+    #[cfg(windows)]
+    fn write_os_str_prefer_narrow(w: &mut dyn Write, name: &std::ffi::OsStr) -> Result<(), IOError> {
+        use std::os::windows::ffi::OsStrExt;
+        let mut narrow_chars = String::new();
+        let mut narrow = true;
+        'check: for ch in name.encode_wide() {
+            if ch <= std::u8::MAX as _ && (ch as u8).is_ascii() {
+                narrow_chars.push(ch as u8 as char);
+            } else {
+                narrow = false;
+                break 'check;
+            }
+        }
+        if narrow {
+            write_narrow_str(w, &CowStr::Owned(narrow_chars))
+        } else {
+            write_wide_os_str(w, name)
+        }
+    }
+
+
     pub(crate) fn write_id(w: &mut dyn Write, id: &Id) -> Result<(), IOError> {
         write!(w, "{}", id.0)
     }
@@ -2393,7 +2414,7 @@ mod codegen {
 
     fn write_path(w: &mut dyn Write, path: &std::path::Path) -> Result<(), IOError> {
         let os_str = path.as_os_str();
-        write_wide_os_str(w, os_str)
+        write_os_str_prefer_narrow(w, os_str)
     }
     
     fn ensure_id_or_name_ignorable(id_or_name: &IdOrName) {
