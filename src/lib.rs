@@ -1209,6 +1209,9 @@ pub mod menu {
             if exist_id {
                 let id = item.id.clone().unwrap();
                 write!(w, "{}", id)?;
+            } else if exist_ty || exist_state || exist_help_id {
+                // for windres compatibility
+                write!(w, "-1")?;
             }
             if exist_ty || exist_state || exist_help_id {
                 write!(w, ", ")?;
