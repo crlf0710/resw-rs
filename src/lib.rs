@@ -2,8 +2,8 @@
 #![allow(dead_code)]
 use std::borrow::Cow;
 use std::collections::BTreeMap;
-use std::io;
 use std::fmt;
+use std::io;
 use std::path::Path;
 use winapi::shared::minwindef::DWORD;
 use winapi::shared::minwindef::WORD;
@@ -127,8 +127,8 @@ where
 }
 
 pub mod predefined_id {
-    use winapi::um::winuser;
     use crate::Id;
+    use winapi::um::winuser;
 
     pub const DEFAULT: Id = Id(-1 as _);
 
@@ -284,7 +284,7 @@ pub mod resource {
                     id_or_name: crate::IdOrName,
                 ) -> Result<(), std::io::Error> {
                     if self.0.as_ref().is_missing_for_lang(l) {
-                        return Ok(())
+                        return Ok(());
                     }
                     crate::codegen::write_resource_header(w, l, id_or_name, $res_type_keyword)?;
                     self.0.as_ref().write_resource_header_extras(w, l)?;
@@ -426,11 +426,19 @@ pub mod resource {
                     true
                 }
 
-                pub(crate) fn write_resource_header_extras(&self, _w: &mut dyn std::io::Write, _l: crate::Lang) -> Result<(), std::io::Error> {
+                pub(crate) fn write_resource_header_extras(
+                    &self,
+                    _w: &mut dyn std::io::Write,
+                    _l: crate::Lang,
+                ) -> Result<(), std::io::Error> {
                     unimplemented!()
                 }
 
-                pub(crate) fn write_resource_segment(&self, _w: &mut dyn std::io::Write, _l: crate::Lang) -> Result<(), std::io::Error> {
+                pub(crate) fn write_resource_segment(
+                    &self,
+                    _w: &mut dyn std::io::Write,
+                    _l: crate::Lang,
+                ) -> Result<(), std::io::Error> {
                     unimplemented!()
                 }
             }
@@ -557,12 +565,14 @@ impl<T> VecLangSpecific<T> {
     }
 
     fn iter(&self, lang: Lang) -> impl Iterator<Item = &T> {
-        self.0.iter().filter(move |&&(ref iter_lang, ref _iter_val)| {
-            iter_lang == &None || iter_lang == &Some(lang)
-        }).map(|&(ref _iter_lang, ref iter_val)| iter_val)
+        self.0
+            .iter()
+            .filter(move |&&(ref iter_lang, ref _iter_val)| {
+                iter_lang == &None || iter_lang == &Some(lang)
+            })
+            .map(|&(ref _iter_lang, ref iter_val)| iter_val)
     }
 }
-
 
 pub struct ExtraInfo {
     pub characteristics: Option<DWORD>,
@@ -582,7 +592,10 @@ impl MultiLangText {
     }
 }
 
-impl<T> From<T> for MultiLangText where T: Into<CowStr> {
+impl<T> From<T> for MultiLangText
+where
+    T: Into<CowStr>,
+{
     fn from(v: T) -> Self {
         let mut r = Self::empty();
         r.0.insert_universal(v.into());
@@ -812,22 +825,17 @@ pub mod accelerators {
         pub const BROWSER_REFRESH: VirtKey = VirtKey(winuser::VK_BROWSER_REFRESH);
         pub const BROWSER_STOP: VirtKey = VirtKey(winuser::VK_BROWSER_STOP);
         pub const BROWSER_SEARCH: VirtKey = VirtKey(winuser::VK_BROWSER_SEARCH);
-        pub const BROWSER_FAVORITES: VirtKey =
-            VirtKey(winuser::VK_BROWSER_FAVORITES);
+        pub const BROWSER_FAVORITES: VirtKey = VirtKey(winuser::VK_BROWSER_FAVORITES);
         pub const BROWSER_HOME: VirtKey = VirtKey(winuser::VK_BROWSER_HOME);
         pub const VOLUME_MUTE: VirtKey = VirtKey(winuser::VK_VOLUME_MUTE);
         pub const VOLUME_DOWN: VirtKey = VirtKey(winuser::VK_VOLUME_DOWN);
         pub const VOLUME_UP: VirtKey = VirtKey(winuser::VK_VOLUME_UP);
-        pub const MEDIA_NEXT_TRACK: VirtKey =
-            VirtKey(winuser::VK_MEDIA_NEXT_TRACK);
-        pub const MEDIA_PREV_TRACK: VirtKey =
-            VirtKey(winuser::VK_MEDIA_PREV_TRACK);
+        pub const MEDIA_NEXT_TRACK: VirtKey = VirtKey(winuser::VK_MEDIA_NEXT_TRACK);
+        pub const MEDIA_PREV_TRACK: VirtKey = VirtKey(winuser::VK_MEDIA_PREV_TRACK);
         pub const MEDIA_STOP: VirtKey = VirtKey(winuser::VK_MEDIA_STOP);
-        pub const MEDIA_PLAY_PAUSE: VirtKey =
-            VirtKey(winuser::VK_MEDIA_PLAY_PAUSE);
+        pub const MEDIA_PLAY_PAUSE: VirtKey = VirtKey(winuser::VK_MEDIA_PLAY_PAUSE);
         pub const LAUNCH_MAIL: VirtKey = VirtKey(winuser::VK_LAUNCH_MAIL);
-        pub const LAUNCH_MEDIA_SELECT: VirtKey =
-            VirtKey(winuser::VK_LAUNCH_MEDIA_SELECT);
+        pub const LAUNCH_MEDIA_SELECT: VirtKey = VirtKey(winuser::VK_LAUNCH_MEDIA_SELECT);
         pub const LAUNCH_APP1: VirtKey = VirtKey(winuser::VK_LAUNCH_APP1);
         pub const LAUNCH_APP2: VirtKey = VirtKey(winuser::VK_LAUNCH_APP2);
         pub const OEM_1: VirtKey = VirtKey(winuser::VK_OEM_1);
@@ -1013,23 +1021,42 @@ pub mod accelerators {
             self.0.get(l).is_none()
         }
 
-        pub(crate) fn write_resource_header_extras(&self, w: &mut dyn std::io::Write, l: crate::Lang) -> Result<(), std::io::Error> {
+        pub(crate) fn write_resource_header_extras(
+            &self,
+            w: &mut dyn std::io::Write,
+            l: crate::Lang,
+        ) -> Result<(), std::io::Error> {
             let items = self.0.get(l).expect("unreachable!");
             crate::codegen::write_extra_info(w, items.extra_info.as_ref())?;
             Ok(())
         }
 
-        pub(crate) fn write_resource_segment(&self, w: &mut dyn std::io::Write, l: crate::Lang) -> Result<(), std::io::Error> {
+        pub(crate) fn write_resource_segment(
+            &self,
+            w: &mut dyn std::io::Write,
+            l: crate::Lang,
+        ) -> Result<(), std::io::Error> {
             let items = self.0.get(l).expect("unreachable!");
             write!(w, "{{\n")?;
             for (id, event) in items.events.iter() {
                 let noinvert = if event.noinvert { ", NOINVERT" } else { "" };
                 match event.key {
-                    Key::ASCII{ascii_key, modifier} => {
-                        write!(w, "\t{}, {}, ASCII{}{}\n", ascii_key, id, modifier, noinvert)?;
-                    },
-                    Key::VirtKey{virt_key, modifier} => {
-                        write!(w, "\t{}, {}, VIRTKEY{}{}\n", virt_key, id, modifier, noinvert)?;
+                    Key::ASCII {
+                        ascii_key,
+                        modifier,
+                    } => {
+                        write!(
+                            w,
+                            "\t{}, {}, ASCII{}{}\n",
+                            ascii_key, id, modifier, noinvert
+                        )?;
+                    }
+                    Key::VirtKey { virt_key, modifier } => {
+                        write!(
+                            w,
+                            "\t{}, {}, VIRTKEY{}{}\n",
+                            virt_key, id, modifier, noinvert
+                        )?;
                     }
                 }
             }
@@ -1040,8 +1067,8 @@ pub mod accelerators {
 }
 
 pub mod menu {
-    use crate::{CowStr, Id, OptionLangSpecific};
     use crate::MultiLangText;
+    use crate::{CowStr, Id, OptionLangSpecific};
     use winapi::ctypes::c_int;
     use winapi::shared::minwindef::UINT;
     use winapi::um::winuser;
@@ -1102,13 +1129,20 @@ pub mod menu {
     builder_build_method!(MenuBuilder, crate::resource::Menu);
 
     impl MenuBuilder {
-        fn internal_add_item(&mut self, id: Option<Id>, text: MultiLangText, ty: MenuType, state: MenuState, popup: Option<PopupData>) {
+        fn internal_add_item(
+            &mut self,
+            id: Option<Id>,
+            text: MultiLangText,
+            ty: MenuType,
+            state: MenuState,
+            popup: Option<PopupData>,
+        ) {
             (self.0).0.push(MenuItem {
                 id,
                 text: text.0,
                 ty,
                 state,
-                popup
+                popup,
             });
         }
     }
@@ -1121,13 +1155,20 @@ pub mod menu {
             (self.0).help_id = Some(help_id);
             self
         }
-        fn internal_add_item(&mut self, id: Option<Id>, text: MultiLangText, ty: MenuType, state: MenuState, popup: Option<PopupData>) {
+        fn internal_add_item(
+            &mut self,
+            id: Option<Id>,
+            text: MultiLangText,
+            ty: MenuType,
+            state: MenuState,
+            popup: Option<PopupData>,
+        ) {
             (self.0).items.push(MenuItem {
                 id,
                 text: text.0,
                 ty,
                 state,
-                popup
+                popup,
             });
         }
     }
@@ -1135,32 +1176,71 @@ pub mod menu {
     macro_rules! declare_menu_append_operations {
         ($builder_ty:ident) => {
             impl $builder_ty {
-                pub fn popup(mut self, text: impl Into<MultiLangText>, popup_building: impl FnOnce(PopupBuilder) -> PopupBuilder) -> Self {
-                    let popup_builder = popup_building(<PopupBuilder as crate::PrivDefault>::priv_default());
-                    self.internal_add_item(None, text.into(), MenuType::default(), MenuState::default(), Some(popup_builder.0));
+                pub fn popup(
+                    mut self,
+                    text: impl Into<MultiLangText>,
+                    popup_building: impl FnOnce(PopupBuilder) -> PopupBuilder,
+                ) -> Self {
+                    let popup_builder =
+                        popup_building(<PopupBuilder as crate::PrivDefault>::priv_default());
+                    self.internal_add_item(
+                        None,
+                        text.into(),
+                        MenuType::default(),
+                        MenuState::default(),
+                        Some(popup_builder.0),
+                    );
                     self
                 }
                 pub fn item(mut self, id: impl Into<Id>, text: impl Into<MultiLangText>) -> Self {
-                    self.internal_add_item(Some(id.into()), text.into(), 
-                        MenuType::default(), MenuState::default(), None);
+                    self.internal_add_item(
+                        Some(id.into()),
+                        text.into(),
+                        MenuType::default(),
+                        MenuState::default(),
+                        None,
+                    );
                     self
                 }
                 pub fn separator(mut self) -> Self {
-                    self.internal_add_item(None, MultiLangText::from(""), 
-                        MenuType::SEPARATOR, MenuState::default(), None);
+                    self.internal_add_item(
+                        None,
+                        MultiLangText::from(""),
+                        MenuType::SEPARATOR,
+                        MenuState::default(),
+                        None,
+                    );
                     self
                 }
 
-                pub fn complex_popup(mut self, id: Option<impl Into<Id>>, text: impl Into<MultiLangText>, ty: MenuType, state: MenuState, popup_building: impl FnOnce(PopupBuilder) -> PopupBuilder) -> Self {
-                    let popup_builder = popup_building(<PopupBuilder as crate::PrivDefault>::priv_default());
-                    self.internal_add_item(id.map(Into::into), text.into(), 
-                        ty, state, Some(popup_builder.0));
+                pub fn complex_popup(
+                    mut self,
+                    id: Option<impl Into<Id>>,
+                    text: impl Into<MultiLangText>,
+                    ty: MenuType,
+                    state: MenuState,
+                    popup_building: impl FnOnce(PopupBuilder) -> PopupBuilder,
+                ) -> Self {
+                    let popup_builder =
+                        popup_building(<PopupBuilder as crate::PrivDefault>::priv_default());
+                    self.internal_add_item(
+                        id.map(Into::into),
+                        text.into(),
+                        ty,
+                        state,
+                        Some(popup_builder.0),
+                    );
                     self
                 }
 
-                pub fn complex_item(mut self, id: Option<impl Into<Id>>, text: impl Into<MultiLangText>, ty: MenuType, state: MenuState) -> Self {
-                    self.internal_add_item(id.map(Into::into), text.into(), 
-                        ty, state, None);
+                pub fn complex_item(
+                    mut self,
+                    id: Option<impl Into<Id>>,
+                    text: impl Into<MultiLangText>,
+                    ty: MenuType,
+                    state: MenuState,
+                ) -> Self {
+                    self.internal_add_item(id.map(Into::into), text.into(), ty, state, None);
                     self
                 }
             }
@@ -1182,11 +1262,20 @@ pub mod menu {
             true
         }
 
-        pub(crate) fn write_resource_header_extras(&self, _: &mut dyn std::io::Write, _: crate::Lang) -> Result<(), IOError> {
+        pub(crate) fn write_resource_header_extras(
+            &self,
+            _: &mut dyn std::io::Write,
+            _: crate::Lang,
+        ) -> Result<(), IOError> {
             Ok(())
         }
 
-        fn write_menu_item_resouce_segment(w: &mut dyn std::io::Write, lang: crate::Lang, item: &MenuItem, indent: usize) -> Result<(), IOError> {
+        fn write_menu_item_resouce_segment(
+            w: &mut dyn std::io::Write,
+            lang: crate::Lang,
+            item: &MenuItem,
+            indent: usize,
+        ) -> Result<(), IOError> {
             let text = if let Some(text) = item.text.get(lang) {
                 text
             } else {
@@ -1195,14 +1284,18 @@ pub mod menu {
             for _ in 0..indent {
                 write!(w, "\t")?;
             }
-            let is_popup = item.popup.is_some(); 
+            let is_popup = item.popup.is_some();
             let kind = if is_popup { "POPUP" } else { "MENUITEM" };
             write!(w, "{} ", kind)?;
             crate::codegen::write_narrow_str(w, text)?;
             let exist_id = item.id.is_some();
             let exist_ty = item.ty != MenuType::default();
             let exist_state = item.state != MenuState::default();
-            let exist_help_id = item.popup.as_ref().map(|popup| popup.help_id.is_some()).unwrap_or(false);
+            let exist_help_id = item
+                .popup
+                .as_ref()
+                .map(|popup| popup.help_id.is_some())
+                .unwrap_or(false);
             if exist_id || exist_ty || exist_state || exist_help_id {
                 write!(w, ", ")?;
             }
@@ -1229,7 +1322,10 @@ pub mod menu {
                 write!(w, ", ")?;
             }
             if exist_help_id {
-                crate::codegen::write_c_int(w, item.popup.as_ref().unwrap().help_id.clone().unwrap())?;
+                crate::codegen::write_c_int(
+                    w,
+                    item.popup.as_ref().unwrap().help_id.clone().unwrap(),
+                )?;
             }
             write!(w, "\n")?;
             if is_popup {
@@ -1246,10 +1342,14 @@ pub mod menu {
                 }
                 write!(w, "}}\n")?;
             }
-            Ok(())            
+            Ok(())
         }
 
-        pub(crate) fn write_resource_segment(&self, w: &mut dyn std::io::Write, l: crate::Lang) -> Result<(), IOError> {
+        pub(crate) fn write_resource_segment(
+            &self,
+            w: &mut dyn std::io::Write,
+            l: crate::Lang,
+        ) -> Result<(), IOError> {
             write!(w, "{{\n")?;
             for item in self.0.iter() {
                 Self::write_menu_item_resouce_segment(w, l, item, 1)?;
@@ -1272,7 +1372,10 @@ pub struct Rect {
 impl Rect {
     pub fn new(x: c_int, y: c_int, width: c_int, height: c_int) -> Self {
         Rect {
-            x, y, width, height
+            x,
+            y,
+            width,
+            height,
         }
     }
 }
@@ -1358,17 +1461,15 @@ impl FontCharset {
     pub const BALTIC: FontCharset = FontCharset(wingdi::BALTIC_CHARSET as _);
 }
 
-
 pub mod dialog {
-    use crate::{CowStr, ExtraInfo, Id, IdOrName};
-    use crate::{OptionLangSpecific, VecLangSpecific};
     use crate::MultiLangText;
     use crate::Rect;
-    use crate::{Font, FontWeight, FontSize, FontItalic, FontCharset};
+    use crate::{CowStr, ExtraInfo, Id, IdOrName};
+    use crate::{Font, FontCharset, FontItalic, FontSize, FontWeight};
+    use crate::{OptionLangSpecific, VecLangSpecific};
     use winapi::ctypes::c_int;
-    use winapi::shared::minwindef::{DWORD};
+    use winapi::shared::minwindef::DWORD;
     use winapi::um::winuser;
-
 
     #[derive(Clone, Copy, Default)]
     pub struct WindowStyle(pub(crate) Option<DWORD>, pub(crate) Option<DWORD>);
@@ -1395,8 +1496,10 @@ pub mod dialog {
         pub const MINIMIZE_BOX: WindowStyle = WindowStyle(Some(winuser::WS_MINIMIZEBOX), None);
         pub const MAXIMIZE_BOX: WindowStyle = WindowStyle(Some(winuser::WS_MAXIMIZEBOX), None);
 
-        pub const DIALOG_MODAL_FRAME: WindowStyle = WindowStyle(None, Some(winuser::WS_EX_DLGMODALFRAME));
-        pub const NO_PARENT_NOTIFY: WindowStyle = WindowStyle(None, Some(winuser::WS_EX_NOPARENTNOTIFY));
+        pub const DIALOG_MODAL_FRAME: WindowStyle =
+            WindowStyle(None, Some(winuser::WS_EX_DLGMODALFRAME));
+        pub const NO_PARENT_NOTIFY: WindowStyle =
+            WindowStyle(None, Some(winuser::WS_EX_NOPARENTNOTIFY));
         pub const TOP_MOST: WindowStyle = WindowStyle(None, Some(winuser::WS_EX_TOPMOST));
         pub const ACCEPT_FILES: WindowStyle = WindowStyle(None, Some(winuser::WS_EX_ACCEPTFILES));
         pub const TRANSPARENT: WindowStyle = WindowStyle(None, Some(winuser::WS_EX_TRANSPARENT));
@@ -1409,37 +1512,53 @@ pub mod dialog {
         pub const LEFT: WindowStyle = WindowStyle(None, Some(winuser::WS_EX_LEFT));
         pub const RTL_READING: WindowStyle = WindowStyle(None, Some(winuser::WS_EX_RTLREADING));
         pub const LTR_READING: WindowStyle = WindowStyle(None, Some(winuser::WS_EX_LTRREADING));
-        pub const LEFT_SCROLLBAR: WindowStyle = WindowStyle(None, Some(winuser::WS_EX_LEFTSCROLLBAR));
-        pub const RIGHT_SCROLLBAR: WindowStyle = WindowStyle(None, Some(winuser::WS_EX_RIGHTSCROLLBAR));
-        pub const CONTROL_PARENT: WindowStyle = WindowStyle(None, Some(winuser::WS_EX_CONTROLPARENT));
+        pub const LEFT_SCROLLBAR: WindowStyle =
+            WindowStyle(None, Some(winuser::WS_EX_LEFTSCROLLBAR));
+        pub const RIGHT_SCROLLBAR: WindowStyle =
+            WindowStyle(None, Some(winuser::WS_EX_RIGHTSCROLLBAR));
+        pub const CONTROL_PARENT: WindowStyle =
+            WindowStyle(None, Some(winuser::WS_EX_CONTROLPARENT));
         pub const STATIC_EDGE: WindowStyle = WindowStyle(None, Some(winuser::WS_EX_STATICEDGE));
         pub const APP_WINDOW: WindowStyle = WindowStyle(None, Some(winuser::WS_EX_APPWINDOW));
         pub const LAYERED: WindowStyle = WindowStyle(None, Some(winuser::WS_EX_LAYERED));
-        pub const NO_INHERIT_LAYOUT: WindowStyle = WindowStyle(None, Some(winuser::WS_EX_NOINHERITLAYOUT));
-        pub const NO_REDIRECTION_BITMAP: WindowStyle = WindowStyle(None, Some(winuser::WS_EX_NOREDIRECTIONBITMAP));
+        pub const NO_INHERIT_LAYOUT: WindowStyle =
+            WindowStyle(None, Some(winuser::WS_EX_NOINHERITLAYOUT));
+        pub const NO_REDIRECTION_BITMAP: WindowStyle =
+            WindowStyle(None, Some(winuser::WS_EX_NOREDIRECTIONBITMAP));
         pub const LAYOUT_RTL: WindowStyle = WindowStyle(None, Some(winuser::WS_EX_LAYOUTRTL));
         pub const COMPOSITED: WindowStyle = WindowStyle(None, Some(winuser::WS_EX_COMPOSITED));
         pub const NO_ACTIVATE: WindowStyle = WindowStyle(None, Some(winuser::WS_EX_NOACTIVATE));
 
         pub const COMBINATION_OVERLAPPED_WINDOW: WindowStyle = WindowStyle(
-            Some(winuser::WS_OVERLAPPED | winuser::WS_CAPTION | winuser::WS_SYSMENU | winuser::WS_THICKFRAME | winuser::WS_MINIMIZEBOX | winuser::WS_MAXIMIZEBOX),
-            Some(winuser::WS_EX_WINDOWEDGE | winuser::WS_EX_CLIENTEDGE));
+            Some(
+                winuser::WS_OVERLAPPED
+                    | winuser::WS_CAPTION
+                    | winuser::WS_SYSMENU
+                    | winuser::WS_THICKFRAME
+                    | winuser::WS_MINIMIZEBOX
+                    | winuser::WS_MAXIMIZEBOX,
+            ),
+            Some(winuser::WS_EX_WINDOWEDGE | winuser::WS_EX_CLIENTEDGE),
+        );
 
         pub const COMBINATION_POPUP_WINDOW: WindowStyle = WindowStyle(
-            Some(winuser::WS_POPUP | winuser::WS_BORDER | winuser::WS_SYSMENU), None);
+            Some(winuser::WS_POPUP | winuser::WS_BORDER | winuser::WS_SYSMENU),
+            None,
+        );
 
-        pub const COMBINATION_CHILD_WINDOW: WindowStyle = WindowStyle(
-            Some(winuser::WS_CHILD), None);
-        
+        pub const COMBINATION_CHILD_WINDOW: WindowStyle =
+            WindowStyle(Some(winuser::WS_CHILD), None);
+
         pub const COMBINATION_PALETTE_WINDOW: WindowStyle = WindowStyle(
-            None, Some(winuser::WS_EX_WINDOWEDGE | winuser::WS_EX_TOOLWINDOW | winuser::WS_EX_TOPMOST));
+            None,
+            Some(winuser::WS_EX_WINDOWEDGE | winuser::WS_EX_TOOLWINDOW | winuser::WS_EX_TOPMOST),
+        );
 
         // pub const TILED: WindowStyle = WindowStyle::OVERLAPPED; //Alias - Use the corresponding constant instead.
         // pub const ICONIC: WindowStyle = WindowStyle::MINIMIZE; //Alias - Use the corresponding constant instead.
         // pub const SIZEBOX: WindowStyle = WindowStyle::THICKFRAME; //Alias - Use the corresponding constant instead.
 
         // pub const COMBINATION_TILEDWINDOW: WindowStyle = WindowStyle::COMBINATION_OVERLAPPED_WINDOW; //Alias - Use the corresponding constant instead.
-
     }
 
     fn option_dword_bitor(a: Option<DWORD>, b: Option<DWORD>) -> Option<DWORD> {
@@ -1457,7 +1576,7 @@ pub mod dialog {
         fn bitor(self, rhs: Self) -> Self {
             WindowStyle(
                 option_dword_bitor(self.0, rhs.0),
-                option_dword_bitor(self.1, rhs.1)
+                option_dword_bitor(self.1, rhs.1),
             )
         }
     }
@@ -1468,30 +1587,42 @@ pub mod dialog {
         }
     }
 
-
     #[derive(Clone, Copy, Default)]
     pub struct DialogStyle(WindowStyle);
 
     impl DialogStyle {
-        pub const ABSOLUTE_ALIGN: DialogStyle = DialogStyle(WindowStyle(Some(winuser::DS_ABSALIGN), None));
+        pub const ABSOLUTE_ALIGN: DialogStyle =
+            DialogStyle(WindowStyle(Some(winuser::DS_ABSALIGN), None));
         pub const SET_FONT: DialogStyle = DialogStyle(WindowStyle(Some(winuser::DS_SETFONT), None));
-        pub const MODAL_FRAME: DialogStyle = DialogStyle(WindowStyle(Some(winuser::DS_MODALFRAME), None));
-        pub const NO_IDLE_MSG: DialogStyle = DialogStyle(WindowStyle(Some(winuser::DS_NOIDLEMSG), None));
-        pub const SET_FOREGROUND: DialogStyle = DialogStyle(WindowStyle(Some(winuser::DS_SETFOREGROUND), None));
-        pub const FIXED_SYS: DialogStyle = DialogStyle(WindowStyle(Some(winuser::DS_FIXEDSYS), None));
-        pub const NO_FAIL_CREATE: DialogStyle = DialogStyle(WindowStyle(Some(winuser::DS_NOFAILCREATE), None));
+        pub const MODAL_FRAME: DialogStyle =
+            DialogStyle(WindowStyle(Some(winuser::DS_MODALFRAME), None));
+        pub const NO_IDLE_MSG: DialogStyle =
+            DialogStyle(WindowStyle(Some(winuser::DS_NOIDLEMSG), None));
+        pub const SET_FOREGROUND: DialogStyle =
+            DialogStyle(WindowStyle(Some(winuser::DS_SETFOREGROUND), None));
+        pub const FIXED_SYS: DialogStyle =
+            DialogStyle(WindowStyle(Some(winuser::DS_FIXEDSYS), None));
+        pub const NO_FAIL_CREATE: DialogStyle =
+            DialogStyle(WindowStyle(Some(winuser::DS_NOFAILCREATE), None));
         pub const CONTROL: DialogStyle = DialogStyle(WindowStyle(Some(winuser::DS_CONTROL), None));
         pub const CENTER: DialogStyle = DialogStyle(WindowStyle(Some(winuser::DS_CENTER), None));
-        pub const CENTER_MOUSE: DialogStyle = DialogStyle(WindowStyle(Some(winuser::DS_CENTERMOUSE), None));
-        pub const CONTEXT_HELP: DialogStyle = DialogStyle(WindowStyle(Some(winuser::DS_CONTEXTHELP), None));
-        pub const SHELL_FONT: DialogStyle = DialogStyle(WindowStyle(Some(winuser::DS_SHELLFONT), None));
-        pub const USE_PIXELS: DialogStyle = DialogStyle(WindowStyle(Some(winuser::DS_USEPIXELS), None));
+        pub const CENTER_MOUSE: DialogStyle =
+            DialogStyle(WindowStyle(Some(winuser::DS_CENTERMOUSE), None));
+        pub const CONTEXT_HELP: DialogStyle =
+            DialogStyle(WindowStyle(Some(winuser::DS_CONTEXTHELP), None));
+        pub const SHELL_FONT: DialogStyle =
+            DialogStyle(WindowStyle(Some(winuser::DS_SHELLFONT), None));
+        pub const USE_PIXELS: DialogStyle =
+            DialogStyle(WindowStyle(Some(winuser::DS_USEPIXELS), None));
         #[deprecated]
-        pub const SYSTEM_MODAL: DialogStyle = DialogStyle(WindowStyle(Some(winuser::DS_SYSMODAL), None));
+        pub const SYSTEM_MODAL: DialogStyle =
+            DialogStyle(WindowStyle(Some(winuser::DS_SYSMODAL), None));
         #[deprecated]
-        pub const LOCALEDIT: DialogStyle = DialogStyle(WindowStyle(Some(winuser::DS_LOCALEDIT), None));
+        pub const LOCALEDIT: DialogStyle =
+            DialogStyle(WindowStyle(Some(winuser::DS_LOCALEDIT), None));
         #[deprecated]
-        pub const THREE_DIM_LOOK: DialogStyle = DialogStyle(WindowStyle(Some(winuser::DS_3DLOOK), None));
+        pub const THREE_DIM_LOOK: DialogStyle =
+            DialogStyle(WindowStyle(Some(winuser::DS_3DLOOK), None));
     }
 
     impl From<WindowStyle> for DialogStyle {
@@ -1522,7 +1653,7 @@ pub mod dialog {
             ControlStyle(v)
         }
     }
-    
+
     impl std::ops::BitOr for ControlStyle {
         type Output = Self;
 
@@ -1546,36 +1677,70 @@ pub mod dialog {
         pub const CENTER: StaticControlContentType = StaticControlContentType(winuser::SS_CENTER);
         pub const RIGHT: StaticControlContentType = StaticControlContentType(winuser::SS_RIGHT);
         pub const ICON: StaticControlContentType = StaticControlContentType(winuser::SS_ICON);
-        pub const BLACK_RECT: StaticControlContentType = StaticControlContentType(winuser::SS_BLACKRECT);
-        pub const GRAY_RECT: StaticControlContentType = StaticControlContentType(winuser::SS_GRAYRECT);
-        pub const WHITE_RECT: StaticControlContentType = StaticControlContentType(winuser::SS_WHITERECT);
-        pub const BLACK_FRAME: StaticControlContentType = StaticControlContentType(winuser::SS_BLACKFRAME);
-        pub const GRAY_FRAME: StaticControlContentType = StaticControlContentType(winuser::SS_GRAYFRAME);
-        pub const WHITE_FRAME: StaticControlContentType = StaticControlContentType(winuser::SS_WHITEFRAME);
-        pub const USER_ITEM: StaticControlContentType = StaticControlContentType(winuser::SS_USERITEM);
+        pub const BLACK_RECT: StaticControlContentType =
+            StaticControlContentType(winuser::SS_BLACKRECT);
+        pub const GRAY_RECT: StaticControlContentType =
+            StaticControlContentType(winuser::SS_GRAYRECT);
+        pub const WHITE_RECT: StaticControlContentType =
+            StaticControlContentType(winuser::SS_WHITERECT);
+        pub const BLACK_FRAME: StaticControlContentType =
+            StaticControlContentType(winuser::SS_BLACKFRAME);
+        pub const GRAY_FRAME: StaticControlContentType =
+            StaticControlContentType(winuser::SS_GRAYFRAME);
+        pub const WHITE_FRAME: StaticControlContentType =
+            StaticControlContentType(winuser::SS_WHITEFRAME);
+        pub const USER_ITEM: StaticControlContentType =
+            StaticControlContentType(winuser::SS_USERITEM);
         pub const SIMPLE: StaticControlContentType = StaticControlContentType(winuser::SS_SIMPLE);
-        pub const LEFT_NO_WORD_WRAP: StaticControlContentType = StaticControlContentType(winuser::SS_LEFTNOWORDWRAP);
-        pub const OWNER_DRAW: StaticControlContentType = StaticControlContentType(winuser::SS_OWNERDRAW);
+        pub const LEFT_NO_WORD_WRAP: StaticControlContentType =
+            StaticControlContentType(winuser::SS_LEFTNOWORDWRAP);
+        pub const OWNER_DRAW: StaticControlContentType =
+            StaticControlContentType(winuser::SS_OWNERDRAW);
         pub const BITMAP: StaticControlContentType = StaticControlContentType(winuser::SS_BITMAP);
-        pub const ENH_META_FILE: StaticControlContentType = StaticControlContentType(winuser::SS_ENHMETAFILE);
-        pub const ETCHED_HORZ: StaticControlContentType = StaticControlContentType(winuser::SS_ETCHEDHORZ);
-        pub const ETCHED_VERT: StaticControlContentType = StaticControlContentType(winuser::SS_ETCHEDVERT);
-        pub const ETCHED_FRAME: StaticControlContentType = StaticControlContentType(winuser::SS_ETCHEDFRAME);
+        pub const ENH_META_FILE: StaticControlContentType =
+            StaticControlContentType(winuser::SS_ENHMETAFILE);
+        pub const ETCHED_HORZ: StaticControlContentType =
+            StaticControlContentType(winuser::SS_ETCHEDHORZ);
+        pub const ETCHED_VERT: StaticControlContentType =
+            StaticControlContentType(winuser::SS_ETCHEDVERT);
+        pub const ETCHED_FRAME: StaticControlContentType =
+            StaticControlContentType(winuser::SS_ETCHEDFRAME);
         //pub const TYPEMASK: StaticControlContentType = StaticControlContentType(winuser::SS_TYPEMASK);
     }
 
     impl StaticControlStyle {
-        pub const REAL_SIZE_CONTROL: StaticControlStyle = StaticControlStyle(ControlStyle(WindowStyle(Some(winuser::SS_REALSIZECONTROL), None)));
-        pub const NO_PREFIX: StaticControlStyle = StaticControlStyle(ControlStyle(WindowStyle(Some(winuser::SS_NOPREFIX), None)));
-        pub const NOTIFY: StaticControlStyle = StaticControlStyle(ControlStyle(WindowStyle(Some(winuser::SS_NOTIFY), None)));
-        pub const CENTER_IMAGE: StaticControlStyle = StaticControlStyle(ControlStyle(WindowStyle(Some(winuser::SS_CENTERIMAGE), None)));
-        pub const RIGHT_JUST: StaticControlStyle = StaticControlStyle(ControlStyle(WindowStyle(Some(winuser::SS_RIGHTJUST), None)));
-        pub const REAL_SIZE_IMAGE: StaticControlStyle = StaticControlStyle(ControlStyle(WindowStyle(Some(winuser::SS_REALSIZEIMAGE), None)));
-        pub const SUNKEN: StaticControlStyle = StaticControlStyle(ControlStyle(WindowStyle(Some(winuser::SS_SUNKEN), None)));
-        pub const EDIT_CONTROL: StaticControlStyle = StaticControlStyle(ControlStyle(WindowStyle(Some(winuser::SS_EDITCONTROL), None)));
-        pub const END_ELLIPSIS: StaticControlStyle = StaticControlStyle(ControlStyle(WindowStyle(Some(winuser::SS_ENDELLIPSIS), None)));
-        pub const PATH_ELLIPSIS: StaticControlStyle = StaticControlStyle(ControlStyle(WindowStyle(Some(winuser::SS_PATHELLIPSIS), None)));
-        pub const WORD_ELLIPSIS: StaticControlStyle = StaticControlStyle(ControlStyle(WindowStyle(Some(winuser::SS_WORDELLIPSIS), None)));
+        pub const REAL_SIZE_CONTROL: StaticControlStyle = StaticControlStyle(ControlStyle(
+            WindowStyle(Some(winuser::SS_REALSIZECONTROL), None),
+        ));
+        pub const NO_PREFIX: StaticControlStyle =
+            StaticControlStyle(ControlStyle(WindowStyle(Some(winuser::SS_NOPREFIX), None)));
+        pub const NOTIFY: StaticControlStyle =
+            StaticControlStyle(ControlStyle(WindowStyle(Some(winuser::SS_NOTIFY), None)));
+        pub const CENTER_IMAGE: StaticControlStyle = StaticControlStyle(ControlStyle(WindowStyle(
+            Some(winuser::SS_CENTERIMAGE),
+            None,
+        )));
+        pub const RIGHT_JUST: StaticControlStyle =
+            StaticControlStyle(ControlStyle(WindowStyle(Some(winuser::SS_RIGHTJUST), None)));
+        pub const REAL_SIZE_IMAGE: StaticControlStyle = StaticControlStyle(ControlStyle(
+            WindowStyle(Some(winuser::SS_REALSIZEIMAGE), None),
+        ));
+        pub const SUNKEN: StaticControlStyle =
+            StaticControlStyle(ControlStyle(WindowStyle(Some(winuser::SS_SUNKEN), None)));
+        pub const EDIT_CONTROL: StaticControlStyle = StaticControlStyle(ControlStyle(WindowStyle(
+            Some(winuser::SS_EDITCONTROL),
+            None,
+        )));
+        pub const END_ELLIPSIS: StaticControlStyle = StaticControlStyle(ControlStyle(WindowStyle(
+            Some(winuser::SS_ENDELLIPSIS),
+            None,
+        )));
+        pub const PATH_ELLIPSIS: StaticControlStyle = StaticControlStyle(ControlStyle(
+            WindowStyle(Some(winuser::SS_PATHELLIPSIS), None),
+        ));
+        pub const WORD_ELLIPSIS: StaticControlStyle = StaticControlStyle(ControlStyle(
+            WindowStyle(Some(winuser::SS_WORDELLIPSIS), None),
+        ));
         //pub const ELLIPSISMASK: StaticControlStyle = StaticControlStyle(ControlStyle(WindowStyle(Some(winuser::SS_ELLIPSISMASK), None)));
     }
 
@@ -1583,13 +1748,13 @@ pub mod dialog {
         fn from(v: WindowStyle) -> Self {
             StaticControlStyle(ControlStyle(v))
         }
-    }    
+    }
 
     impl From<ControlStyle> for StaticControlStyle {
         fn from(v: ControlStyle) -> Self {
             StaticControlStyle(v)
         }
-    }    
+    }
 
     #[derive(Clone, Copy)]
     pub struct ButtonControlStyle(ControlStyle);
@@ -1598,13 +1763,13 @@ pub mod dialog {
         fn from(v: WindowStyle) -> Self {
             ButtonControlStyle(ControlStyle(v))
         }
-    }    
+    }
 
     impl From<ControlStyle> for ButtonControlStyle {
         fn from(v: ControlStyle) -> Self {
             ButtonControlStyle(v)
         }
-    }     
+    }
 
     #[derive(Clone, Copy)]
     pub struct EditControlStyle(ControlStyle);
@@ -1613,13 +1778,13 @@ pub mod dialog {
         fn from(v: WindowStyle) -> Self {
             EditControlStyle(ControlStyle(v))
         }
-    }    
+    }
 
     impl From<ControlStyle> for EditControlStyle {
         fn from(v: ControlStyle) -> Self {
             EditControlStyle(v)
         }
-    }     
+    }
 
     #[derive(Clone, Copy)]
     pub struct ScrollBarControlStyle(ControlStyle);
@@ -1628,13 +1793,13 @@ pub mod dialog {
         fn from(v: WindowStyle) -> Self {
             ScrollBarControlStyle(ControlStyle(v))
         }
-    }    
+    }
 
     impl From<ControlStyle> for ScrollBarControlStyle {
         fn from(v: ControlStyle) -> Self {
             ScrollBarControlStyle(v)
         }
-    }     
+    }
 
     #[derive(Clone, Copy)]
     pub struct ComboBoxControlStyle(ControlStyle);
@@ -1643,13 +1808,13 @@ pub mod dialog {
         fn from(v: WindowStyle) -> Self {
             ComboBoxControlStyle(ControlStyle(v))
         }
-    }    
+    }
 
     impl From<ControlStyle> for ComboBoxControlStyle {
         fn from(v: ControlStyle) -> Self {
             ComboBoxControlStyle(v)
         }
-    }     
+    }
 
     #[derive(Clone, Copy)]
     pub struct ListBoxControlStyle(ControlStyle);
@@ -1658,14 +1823,13 @@ pub mod dialog {
         fn from(v: WindowStyle) -> Self {
             ListBoxControlStyle(ControlStyle(v))
         }
-    }    
+    }
 
     impl From<ControlStyle> for ListBoxControlStyle {
         fn from(v: ControlStyle) -> Self {
             ListBoxControlStyle(v)
         }
-    }     
-
+    }
 
     enum IdOrLangSpecificStr {
         LangSpecificStr(OptionLangSpecific<CowStr>),
@@ -1700,7 +1864,9 @@ pub mod dialog {
     }
 
     pub trait ControlTrait {
-        fn into_control(self) -> Control where Self:Sized;
+        fn into_control(self) -> Control
+        where
+            Self: Sized;
     }
 
     pub trait ControlTemplateTrait {
@@ -1725,7 +1891,6 @@ pub mod dialog {
                     self.0
                 }
             }
-            
         };
     }
 
@@ -1812,7 +1977,7 @@ pub mod dialog {
             *self.0.style.get_or_insert_with(Default::default) |= style.into().0;
             self
         }
-    }    
+    }
 
     define_control_class!(StaticControlTemplate, StaticControl);
     define_control_class!(ButtonControlTemplate, ButtonControl);
@@ -1933,11 +2098,10 @@ pub mod dialog {
     }
 
     impl Control {
-        pub fn from_template<T:ControlTemplateTrait>(template: T) -> T::ControlType {
+        pub fn from_template<T: ControlTemplateTrait>(template: T) -> T::ControlType {
             template.instantiate_control()
         }
     }
-
 
     #[derive(Default)]
     pub(crate) struct DialogData {
@@ -1973,37 +2137,62 @@ pub mod dialog {
             self
         }
 
-        pub fn font(mut self, typeface: impl Into<CowStr>, size: FontSize, 
-            weight: FontWeight, italic: FontItalic, charset: FontCharset) -> Self {
+        pub fn font(
+            mut self,
+            typeface: impl Into<CowStr>,
+            size: FontSize,
+            weight: FontWeight,
+            italic: FontItalic,
+            charset: FontCharset,
+        ) -> Self {
             self.0.font.insert_universal(Font {
                 typeface: typeface.into(),
                 size,
                 weight,
                 italic,
-                charset
+                charset,
             });
             self
         }
 
-        pub fn lang_specific_font(mut self, lang: crate::Lang, typeface: impl Into<CowStr>, size: FontSize, 
-            weight: FontWeight, italic: FontItalic, charset: FontCharset) -> Self {
-            self.0.font.insert_lang_specific(lang, Font {
-                typeface: typeface.into(),
-                size,
-                weight,
-                italic,
-                charset
-            });
+        pub fn lang_specific_font(
+            mut self,
+            lang: crate::Lang,
+            typeface: impl Into<CowStr>,
+            size: FontSize,
+            weight: FontWeight,
+            italic: FontItalic,
+            charset: FontCharset,
+        ) -> Self {
+            self.0.font.insert_lang_specific(
+                lang,
+                Font {
+                    typeface: typeface.into(),
+                    size,
+                    weight,
+                    italic,
+                    charset,
+                },
+            );
             self
         }
 
         pub fn control(mut self, id: impl Into<Id>, control: impl ControlTrait) -> Self {
-            self.0.controls.push_universal((id.into(), control.into_control()));
+            self.0
+                .controls
+                .push_universal((id.into(), control.into_control()));
             self
         }
 
-        pub fn lang_specific_control(mut self, lang: crate::Lang, id: impl Into<Id>, control: impl ControlTrait) -> Self {
-            self.0.controls.push_lang_specific(lang, (id.into(), control.into_control()));
+        pub fn lang_specific_control(
+            mut self,
+            lang: crate::Lang,
+            id: impl Into<Id>,
+            control: impl ControlTrait,
+        ) -> Self {
+            self.0
+                .controls
+                .push_lang_specific(lang, (id.into(), control.into_control()));
             self
         }
 
@@ -2016,7 +2205,6 @@ pub mod dialog {
             self.0.rect.insert_lang_specific(lang, rect);
             self
         }
-
     }
 
     impl DialogData {
@@ -2024,7 +2212,11 @@ pub mod dialog {
             false
         }
 
-        pub(crate) fn write_resource_header_extras(&self, w: &mut dyn std::io::Write, lang: crate::Lang) -> Result<(), std::io::Error> {
+        pub(crate) fn write_resource_header_extras(
+            &self,
+            w: &mut dyn std::io::Write,
+            lang: crate::Lang,
+        ) -> Result<(), std::io::Error> {
             let mut rect = self.rect.get(lang).cloned();
             let rect = rect.get_or_insert_with(Default::default);
             write!(w, " ")?;
@@ -2056,7 +2248,11 @@ pub mod dialog {
             Ok(())
         }
 
-        pub(crate) fn write_resource_segment(&self, w: &mut dyn std::io::Write, lang: crate::Lang) -> Result<(), std::io::Error> {
+        pub(crate) fn write_resource_segment(
+            &self,
+            w: &mut dyn std::io::Write,
+            lang: crate::Lang,
+        ) -> Result<(), std::io::Error> {
             write!(w, "{{\n")?;
             let default_template = ControlTemplate {
                 name: "CONTROL",
@@ -2070,15 +2266,21 @@ pub mod dialog {
                 if template.use_text {
                     match &control.text_or_image {
                         Some(crate::dialog::IdOrLangSpecificStr::Id(text_or_image_id)) => {
-                            let text_or_image_id = text_or_image_id.as_ref().unwrap_or(&crate::predefined_id::DEFAULT);
+                            let text_or_image_id = text_or_image_id
+                                .as_ref()
+                                .unwrap_or(&crate::predefined_id::DEFAULT);
                             crate::codegen::write_id(w, text_or_image_id)?;
-                        },
+                        }
                         _ => {
-                            let text = if let Some(crate::dialog::IdOrLangSpecificStr::LangSpecificStr(lang_specific_str)) = &control.text_or_image {
-                                lang_specific_str.get(lang)
-                            } else {
-                                None
-                            };
+                            let text =
+                                if let Some(crate::dialog::IdOrLangSpecificStr::LangSpecificStr(
+                                    lang_specific_str,
+                                )) = &control.text_or_image
+                                {
+                                    lang_specific_str.get(lang)
+                                } else {
+                                    None
+                                };
                             crate::codegen::write_mandatory_narrow_str(w, text)?;
                         }
                     }
@@ -2239,10 +2441,10 @@ impl Build {
 }
 
 mod codegen {
-    use std::io::{Error as IOError, Write};
-    use crate::{Id, IdOrName};
-    use crate::CowStr;
     use crate::resource;
+    use crate::CowStr;
+    use crate::{Id, IdOrName};
+    use std::io::{Error as IOError, Write};
 
     pub(crate) fn write_header(w: &mut dyn Write) -> Result<(), IOError> {
         write!(
@@ -2255,7 +2457,10 @@ mod codegen {
         Ok(())
     }
 
-    pub(crate) fn write_c_numeric(w: &mut dyn Write, c_numeric: impl std::fmt::Display) -> Result<(), IOError> {
+    pub(crate) fn write_c_numeric(
+        w: &mut dyn Write,
+        c_numeric: impl std::fmt::Display,
+    ) -> Result<(), IOError> {
         if std::mem::size_of_val(&c_numeric) > 2 {
             write!(w, "{}L", c_numeric)
         } else {
@@ -2263,23 +2468,38 @@ mod codegen {
         }
     }
 
-    pub(crate) fn write_c_uchar(w: &mut dyn Write, c_uchar: winapi::ctypes::c_uchar) -> Result<(), IOError> {
+    pub(crate) fn write_c_uchar(
+        w: &mut dyn Write,
+        c_uchar: winapi::ctypes::c_uchar,
+    ) -> Result<(), IOError> {
         write_c_numeric(w, c_uchar)
     }
 
-    pub(crate) fn write_c_int(w: &mut dyn Write, c_int: winapi::ctypes::c_int) -> Result<(), IOError> {
+    pub(crate) fn write_c_int(
+        w: &mut dyn Write,
+        c_int: winapi::ctypes::c_int,
+    ) -> Result<(), IOError> {
         write_c_numeric(w, c_int)
     }
 
-    pub(crate) fn write_c_long(w: &mut dyn Write, c_long: winapi::ctypes::c_long) -> Result<(), IOError> {
+    pub(crate) fn write_c_long(
+        w: &mut dyn Write,
+        c_long: winapi::ctypes::c_long,
+    ) -> Result<(), IOError> {
         write_c_numeric(w, c_long)
     }
 
-    pub(crate) fn write_dword(w: &mut dyn Write, dword: winapi::shared::minwindef::DWORD) -> Result<(), IOError> {
+    pub(crate) fn write_dword(
+        w: &mut dyn Write,
+        dword: winapi::shared::minwindef::DWORD,
+    ) -> Result<(), IOError> {
         write!(w, "{}L", dword)
     }
 
-    pub(crate) fn write_mandatory_dword(w: &mut dyn Write, dword: Option<&winapi::shared::minwindef::DWORD>) -> Result<(), IOError> {
+    pub(crate) fn write_mandatory_dword(
+        w: &mut dyn Write,
+        dword: Option<&winapi::shared::minwindef::DWORD>,
+    ) -> Result<(), IOError> {
         write_dword(w, dword.cloned().unwrap())
     }
 
@@ -2294,7 +2514,10 @@ mod codegen {
         Ok(())
     }
 
-    pub(crate) fn write_mandatory_rect(w: &mut dyn Write, rect: Option<&crate::Rect>) -> Result<(), IOError> {
+    pub(crate) fn write_mandatory_rect(
+        w: &mut dyn Write,
+        rect: Option<&crate::Rect>,
+    ) -> Result<(), IOError> {
         if let Some(rect) = rect {
             write_rect(w, rect)
         } else {
@@ -2336,7 +2559,10 @@ mod codegen {
         }
     }
 
-    pub(crate) fn write_mandatory_narrow_str(w: &mut dyn Write, string: Option<&CowStr>) -> Result<(), IOError> {
+    pub(crate) fn write_mandatory_narrow_str(
+        w: &mut dyn Write,
+        string: Option<&CowStr>,
+    ) -> Result<(), IOError> {
         if let Some(string) = string {
             write_narrow_str(w, string)
         } else {
@@ -2344,12 +2570,14 @@ mod codegen {
         }
     }
 
-
     pub(crate) fn write_narrow_str(w: &mut dyn Write, string: &CowStr) -> Result<(), IOError> {
         write!(w, "\"")?;
         let mut rest_string = string.as_bytes();
         while !rest_string.is_empty() {
-            let seq = rest_string.split(need_escape_narrow_byte).next().expect("unreachable");
+            let seq = rest_string
+                .split(need_escape_narrow_byte)
+                .next()
+                .expect("unreachable");
             if !seq.is_empty() {
                 w.write_all(seq)?;
                 rest_string = &rest_string[seq.len()..];
@@ -2384,7 +2612,10 @@ mod codegen {
     }
 
     #[cfg(windows)]
-    fn write_os_str_prefer_narrow(w: &mut dyn Write, name: &std::ffi::OsStr) -> Result<(), IOError> {
+    fn write_os_str_prefer_narrow(
+        w: &mut dyn Write,
+        name: &std::ffi::OsStr,
+    ) -> Result<(), IOError> {
         use std::os::windows::ffi::OsStrExt;
         let mut narrow_chars = String::new();
         let mut narrow = true;
@@ -2403,12 +2634,14 @@ mod codegen {
         }
     }
 
-
     pub(crate) fn write_id(w: &mut dyn Write, id: &Id) -> Result<(), IOError> {
         write!(w, "{}", id.0)
     }
 
-    pub(crate) fn write_id_or_name(w: &mut dyn Write, id_or_name: &IdOrName) -> Result<(), IOError> {
+    pub(crate) fn write_id_or_name(
+        w: &mut dyn Write,
+        id_or_name: &IdOrName,
+    ) -> Result<(), IOError> {
         match id_or_name {
             IdOrName::Id(id) => write!(w, "{}", id),
             IdOrName::Name(name) => write_narrow_str(w, name),
@@ -2419,26 +2652,29 @@ mod codegen {
         let os_str = path.as_os_str();
         write_os_str_prefer_narrow(w, os_str)
     }
-    
+
     fn ensure_id_or_name_ignorable(id_or_name: &IdOrName) {
         match id_or_name {
             &IdOrName::Id(Id(v)) => {
                 if v == 0 || v == (-1 as _) {
                     return;
                 }
-            },
+            }
             IdOrName::Name(s) => {
                 if s == "" || s == " " || s == "_" {
                     return;
                 }
-            },
+            }
         }
-        eprintln!("Warning: Expected ignorable id or name, found {:?}. Ignored.", id_or_name);
+        eprintln!(
+            "Warning: Expected ignorable id or name, found {:?}. Ignored.",
+            id_or_name
+        );
     }
 
     pub(crate) fn write_extra_info(
         w: &mut dyn Write,
-        extra_info: Option<&crate::ExtraInfo>
+        extra_info: Option<&crate::ExtraInfo>,
     ) -> Result<(), IOError> {
         if let Some(extra_info) = extra_info {
             if let Some(characteristics) = &extra_info.characteristics {
@@ -2455,24 +2691,24 @@ mod codegen {
 
     pub(crate) fn write_style_and_exstyle_statements(
         w: &mut dyn Write,
-        style: crate::dialog::WindowStyle
+        style: crate::dialog::WindowStyle,
     ) -> Result<(), IOError> {
         match (style.0.as_ref(), style.1.as_ref()) {
-            (None, None) => {},
+            (None, None) => {}
             (Some(basic), None) => {
                 write!(w, "\nSTYLE ")?;
                 write_dword(w, *basic)?;
-            },
+            }
             (None, Some(extended)) => {
                 write!(w, "\nEXSTYLE ")?;
                 write_dword(w, *extended)?;
-            },
+            }
             (Some(basic), Some(extended)) => {
                 write!(w, "\nSTYLE ")?;
                 write_dword(w, *basic)?;
                 write!(w, " EXSTYLE ")?;
                 write_dword(w, *extended)?;
-            },
+            }
         };
         Ok(())
     }
@@ -2504,13 +2740,13 @@ mod codegen {
         match res_type_keyword {
             resource::StringTable::TYPE_KEYWORD => {
                 ensure_id_or_name_ignorable(&id_or_name);
-            },
+            }
             resource::VersionInfo::TYPE_KEYWORD => {
                 if id_or_name != IdOrName::Id(Id(1)) {
                     ensure_id_or_name_ignorable(&id_or_name);
                 }
                 write!(w, "1 ")?;
-            },
+            }
             _ => {
                 write_id_or_name(w, &id_or_name)?;
                 write!(w, " ")?;
