@@ -2423,7 +2423,7 @@ impl Build {
     }
 
     pub fn compile_rc_file(path: &std::path::Path) -> Result<(), io::Error> {
-        embed_resource::compile(path);
+        embed_resource::compile(path, embed_resource::NONE);
         Ok(())
     }
 
